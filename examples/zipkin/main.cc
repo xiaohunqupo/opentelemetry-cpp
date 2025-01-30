@@ -1,12 +1,20 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "opentelemetry/exporters/zipkin/zipkin_exporter_factory.h"
+#include "opentelemetry/exporters/zipkin/zipkin_exporter_options.h"
 #include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/sdk/trace/exporter.h"
 #include "opentelemetry/sdk/trace/processor.h"
 #include "opentelemetry/sdk/trace/simple_processor_factory.h"
+#include "opentelemetry/sdk/trace/tracer_provider.h"
 #include "opentelemetry/sdk/trace/tracer_provider_factory.h"
 #include "opentelemetry/trace/provider.h"
+#include "opentelemetry/trace/tracer_provider.h"
 
 #ifdef BAZEL_BUILD
 #  include "examples/common/foo_library/foo_library.h"
@@ -54,4 +62,5 @@ int main(int argc, char *argv[])
   foo_library();
 
   CleanupTracer();
+  return 0;
 }

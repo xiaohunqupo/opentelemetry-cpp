@@ -59,11 +59,11 @@ public:
       // Store the body of the request
       body_ = std::string(response.GetBody().begin(), response.GetBody().end());
 
-      if (response.GetStatusCode() != 200 && response.GetStatusCode() != 202)
+      if (!(response.GetStatusCode() >= 200 && response.GetStatusCode() <= 299))
       {
         log_message = BuildResponseLogMessage(response, body_);
 
-        OTEL_INTERNAL_LOG_ERROR("ES Log Exporter] Export failed, " << log_message);
+        OTEL_INTERNAL_LOG_ERROR("[ES Log Exporter] Export failed, " << log_message);
       }
 
       if (console_debug_)
@@ -288,12 +288,16 @@ private:
 #endif
 
 ElasticsearchLogRecordExporter::ElasticsearchLogRecordExporter()
-    : options_{ElasticsearchExporterOptions()}, http_client_
-{
-  ext::http::client::HttpClientFactory::Create()
-}
+    : ElasticsearchLogRecordExporter(ElasticsearchExporterOptions())
+{}
+
+ElasticsearchLogRecordExporter::ElasticsearchLogRecordExporter(
+    const ElasticsearchExporterOptions &options)
+    : options_{options},
+      http_client_{ext::http::client::HttpClientFactory::Create()}
 #ifdef ENABLE_ASYNC_EXPORT
-, synchronization_data_(new SynchronizationData())
+      ,
+      synchronization_data_(new SynchronizationData())
 #endif
 {
 #ifdef ENABLE_ASYNC_EXPORT
@@ -301,11 +305,6 @@ ElasticsearchLogRecordExporter::ElasticsearchLogRecordExporter()
   synchronization_data_->session_counter_.store(0);
 #endif
 }
-
-ElasticsearchLogRecordExporter::ElasticsearchLogRecordExporter(
-    const ElasticsearchExporterOptions &options)
-    : options_{options}, http_client_{ext::http::client::HttpClientFactory::Create()}
-{}
 
 std::unique_ptr<sdklogs::Recordable> ElasticsearchLogRecordExporter::MakeRecordable() noexcept
 {
@@ -324,13 +323,20 @@ sdk::common::ExportResult ElasticsearchLogRecordExporter::Export(
   }
 
   // Create a connection to the ElasticSearch instance
-  auto session = http_client_->CreateSession(options_.host_ + std::to_string(options_.port_));
+  auto session = http_client_->CreateSession(options_.host_ + ":" + std::to_string(options_.port_));
   auto request = session->CreateRequest();
 
   // Populate the request with headers and methods
   request->SetUri(options_.index_ + "/_bulk?pretty");
   request->SetMethod(http_client::Method::Post);
   request->AddHeader("Content-Type", "application/json");
+
+  // Add options headers
+  for (auto it = options_.http_headers_.cbegin(); it != options_.http_headers_.cend(); ++it)
+  {
+    request->AddHeader(it->first, it->second);
+  }
+
   request->SetTimeoutMs(std::chrono::milliseconds(1000 * options_.response_timeout_));
 
   // Create the request body
@@ -360,13 +366,13 @@ sdk::common::ExportResult ElasticsearchLogRecordExporter::Export(
         if (result != opentelemetry::sdk::common::ExportResult::kSuccess)
         {
           OTEL_INTERNAL_LOG_ERROR("[ES Log Exporter] ERROR: Export "
-                                  << span_count
-                                  << " trace span(s) error: " << static_cast<int>(result));
+                                               << span_count
+                                               << " trace span(s) error: " << static_cast<int>(result));
         }
         else
         {
           OTEL_INTERNAL_LOG_DEBUG("[ES Log Exporter] Export " << span_count
-                                                              << " trace span(s) success");
+                                                                           << " trace span(s) success");
         }
 
         synchronization_data->finished_session_counter_.fetch_add(1, std::memory_order_release);
@@ -430,7 +436,7 @@ bool ElasticsearchLogRecordExporter::ForceFlush(
       std::chrono::duration_cast<std::chrono::steady_clock::duration>(timeout);
   if (timeout_steady <= std::chrono::steady_clock::duration::zero())
   {
-    timeout_steady = std::chrono::steady_clock::duration::max();
+    timeout_steady = (std::chrono::steady_clock::duration::max)();
   }
 
   std::unique_lock<std::mutex> lk_cv(synchronization_data_->force_flush_cv_m);
@@ -460,7 +466,6 @@ bool ElasticsearchLogRecordExporter::ForceFlush(
 
 bool ElasticsearchLogRecordExporter::Shutdown(std::chrono::microseconds /* timeout */) noexcept
 {
-  const std::lock_guard<opentelemetry::common::SpinLockMutex> locked(lock_);
   is_shutdown_ = true;
 
   // Shutdown the session manager
@@ -472,7 +477,6 @@ bool ElasticsearchLogRecordExporter::Shutdown(std::chrono::microseconds /* timeo
 
 bool ElasticsearchLogRecordExporter::isShutdown() const noexcept
 {
-  const std::lock_guard<opentelemetry::common::SpinLockMutex> locked(lock_);
   return is_shutdown_;
 }
 }  // namespace logs

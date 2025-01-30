@@ -85,6 +85,8 @@ You can link OpenTelemetry C++ SDK with libraries provided in
    - `-DWITH_OTLP_GRPC=ON` : To enable building OTLP GRPC exporter.
    - `-DWITH_OTLP_HTTP=ON` : To enable building OTLP HTTP exporter.
    - `-DWITH_PROMETHEUS=ON` : To enable building prometheus exporter.
+   - `-DOPENTELEMETRY_INSTALL=ON`: To install `otel-cpp` library needed
+      for external code linking.
 
 3. Once the build configuration is created, build the CMake targets - this
    includes building SDKs and unittests for API and SDK. Note that since API is
@@ -124,10 +126,6 @@ You can link OpenTelemetry C++ SDK with libraries provided in
    -- Installing: /<install-root>/lib/cmake/opentelemetry-cpp/opentelemetry-cpp-config.cmake
    -- Installing: /<install-root>/lib/cmake/opentelemetry-cpp/opentelemetry-cpp-config-version.cmake
    ...
-   -- Installing: /<install-root>/include/opentelemetry//ext/zpages/static/tracez_index.h
-   -- Installing: /<install-root>/include/opentelemetry//ext/zpages/static/tracez_style.h
-   -- Installing: /<install-root>/include/opentelemetry//ext/zpages/threadsafe_span_data.h
-   -- Installing: /<install-root>/lib/libopentelemetry_zpages.a
    $
    ```
 

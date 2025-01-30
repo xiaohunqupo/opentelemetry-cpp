@@ -1,18 +1,29 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <benchmark/benchmark.h>
+#include <stddef.h>
+#include <algorithm>
+#include <chrono>
+#include <functional>
+#include <initializer_list>
+#include <random>
+#include <thread>
+#include <utility>
+#include <vector>
 #include "common.h"
 
+#include "opentelemetry/metrics/meter.h"
+#include "opentelemetry/metrics/sync_instruments.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
 #include "opentelemetry/sdk/metrics/data/point_data.h"
-#include "opentelemetry/sdk/metrics/meter.h"
-#include "opentelemetry/sdk/metrics/meter_context.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/metrics/metric_reader.h"
 #include "opentelemetry/sdk/metrics/push_metric_exporter.h"
-
-#include <benchmark/benchmark.h>
-#include <memory>
-#include <random>
 
 using namespace opentelemetry;
 using namespace opentelemetry::sdk::instrumentationscope;
@@ -36,7 +47,7 @@ void BM_SumAggregation(benchmark::State &state)
   double measurements[TOTAL_MEASUREMENTS];
   for (size_t i = 0; i < TOTAL_MEASUREMENTS; i++)
   {
-    measurements[i] = (double)distribution(generator);
+    measurements[i] = static_cast<double>(distribution(generator));
   }
   std::vector<SumPointData> actuals;
   std::vector<std::thread> collectionThreads;

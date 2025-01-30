@@ -1,9 +1,12 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/nostd/unique_ptr.h"
-
 #include <gtest/gtest.h>
+#include <string>
+#include <type_traits>
+#include <utility>
+
+#include "opentelemetry/nostd/unique_ptr.h"
 
 using opentelemetry::nostd::unique_ptr;
 
@@ -49,7 +52,7 @@ TEST(UniquePtrTest, MoveConstruction)
   auto value = new int{123};
   unique_ptr<int> ptr1{value};
   unique_ptr<int> ptr2{std::move(ptr1)};
-  EXPECT_EQ(ptr1.get(), nullptr);
+  EXPECT_EQ(ptr1.get(), nullptr);  // NOLINT
   EXPECT_EQ(ptr2.get(), value);
 }
 
@@ -58,7 +61,7 @@ TEST(UniquePtrTest, MoveConstructionFromDifferentType)
   auto value = new int{123};
   unique_ptr<int> ptr1{value};
   unique_ptr<const int> ptr2{std::move(ptr1)};
-  EXPECT_EQ(ptr1.get(), nullptr);
+  EXPECT_EQ(ptr1.get(), nullptr);  // NOLINT
   EXPECT_EQ(ptr2.get(), value);
 }
 
@@ -67,14 +70,14 @@ TEST(UniquePtrTest, MoveConstructionFromStdUniquePtr)
   auto value = new int{123};
   std::unique_ptr<int> ptr1{value};
   unique_ptr<int> ptr2{std::move(ptr1)};
-  EXPECT_EQ(ptr1.get(), nullptr);
+  EXPECT_EQ(ptr1.get(), nullptr);  // NOLINT
   EXPECT_EQ(ptr2.get(), value);
 }
 
 TEST(UniquePtrTest, Destruction)
 {
   bool was_destructed;
-  unique_ptr<A>{new A{was_destructed}};
+  unique_ptr<A>{new A{was_destructed}};  // NOLINT
   EXPECT_TRUE(was_destructed);
 }
 
@@ -83,13 +86,13 @@ TEST(UniquePtrTest, StdUniquePtrConversionOperator)
   auto value = new int{123};
   unique_ptr<int> ptr1{value};
   std::unique_ptr<int> ptr2{std::move(ptr1)};
-  EXPECT_EQ(ptr1.get(), nullptr);
+  EXPECT_EQ(ptr1.get(), nullptr);  // NOLINT
   EXPECT_EQ(ptr2.get(), value);
 
   value = new int{456};
   ptr1  = unique_ptr<int>{value};
   ptr2  = std::move(ptr1);
-  EXPECT_EQ(ptr1.get(), nullptr);
+  EXPECT_EQ(ptr1.get(), nullptr);  // NOLINT
   EXPECT_EQ(ptr2.get(), value);
 
   ptr2 = nullptr;
@@ -114,8 +117,7 @@ TEST(UniquePtrTest, PointerOperators)
   unique_ptr<int> ptr1{value};
 
   EXPECT_EQ(&*ptr1, value);
-  EXPECT_EQ(
-      unique_ptr<B> { new B }->f(), 123);
+  EXPECT_EQ(unique_ptr<B> { new B } -> f(), 123);
 }
 
 TEST(UniquePtrTest, Reset)

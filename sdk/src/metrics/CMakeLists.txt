@@ -13,6 +13,7 @@ add_library(
   instrument_metadata_validator.cc
   export/periodic_exporting_metric_reader.cc
   export/periodic_exporting_metric_reader_factory.cc
+  state/filtered_ordered_attribute_map.cc
   state/metric_collector.cc
   state/observable_registry.cc
   state/sync_metric_storage.cc
@@ -22,7 +23,6 @@ add_library(
   aggregation/lastvalue_aggregation.cc
   aggregation/sum_aggregation.cc
   data/circular_buffer.cc
-  exemplar/filter.cc
   exemplar/reservoir.cc
   view/instrument_selector_factory.cc
   view/meter_selector_factory.cc

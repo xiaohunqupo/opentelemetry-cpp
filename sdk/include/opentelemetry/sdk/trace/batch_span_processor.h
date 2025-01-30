@@ -3,14 +3,22 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
 
 #include "opentelemetry/sdk/common/circular_buffer.h"
+#include "opentelemetry/sdk/trace/batch_span_processor_options.h"
+#include "opentelemetry/sdk/trace/batch_span_processor_runtime_options.h"
+#include "opentelemetry/sdk/trace/exporter.h"
 #include "opentelemetry/sdk/trace/processor.h"
+#include "opentelemetry/sdk/trace/recordable.h"
+#include "opentelemetry/trace/span_context.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -18,8 +26,6 @@ namespace sdk
 {
 namespace trace
 {
-class SpanExporter;
-struct BatchSpanProcessorOptions;
 
 /**
  * This is an implementation of the SpanProcessor which creates batches of finished spans and passes
@@ -32,11 +38,23 @@ public:
    * Creates a batch span processor by configuring the specified exporter and other parameters
    * as per the official, language-agnostic opentelemetry specs.
    *
-   * @param exporter - The backend exporter to pass the ended spans to.
-   * @param options - The batch SpanProcessor options.
+   * @param exporter The backend exporter to pass the ended spans to.
+   * @param options The batch SpanProcessor configuration options.
    */
   BatchSpanProcessor(std::unique_ptr<SpanExporter> &&exporter,
                      const BatchSpanProcessorOptions &options);
+
+  /**
+   * Creates a batch span processor by configuring the specified exporter and other parameters
+   * as per the official, language-agnostic opentelemetry specs.
+   *
+   * @param exporter The backend exporter to pass the ended spans to.
+   * @param options The batch SpanProcessor configuration options.
+   * @param runtime_options The batch SpanProcessor runtime options.
+   */
+  BatchSpanProcessor(std::unique_ptr<SpanExporter> &&exporter,
+                     const BatchSpanProcessorOptions &options,
+                     const BatchSpanProcessorRuntimeOptions &runtime_options);
 
   /**
    * Requests a Recordable(Span) from the configured exporter.
@@ -69,7 +87,7 @@ public:
    * NOTE: Timeout functionality not supported yet.
    */
   bool ForceFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Shuts down the processor and does any cleanup required. Completely drains the buffer/queue of
@@ -79,7 +97,7 @@ public:
    * NOTE: Timeout functionality not supported yet.
    */
   bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Class destructor which invokes the Shutdown() method. The Shutdown() method is supposed to be
@@ -115,20 +133,25 @@ protected:
 
     /* Important boolean flags to handle the workflow of the processor */
     std::atomic<bool> is_force_wakeup_background_worker{false};
-    std::atomic<bool> is_force_flush_pending{false};
-    std::atomic<bool> is_force_flush_notified{false};
-    std::atomic<std::chrono::microseconds::rep> force_flush_timeout_us{0};
     std::atomic<bool> is_shutdown{false};
+    std::atomic<uint64_t> force_flush_pending_sequence{0};
+    std::atomic<uint64_t> force_flush_notified_sequence{0};
+    std::atomic<std::chrono::microseconds::rep> force_flush_timeout_us{0};
+
+    // Do not use SynchronizationData() = default; here, some versions of GCC&Clang have BUGs
+    // and may not initialize the member correctly. See also
+    // https://stackoverflow.com/questions/53408962/try-to-understand-compiler-error-message-default-member-initializer-required-be
+    inline SynchronizationData() {}
   };
 
   /**
    * @brief Notify completion of shutdown and force flush. This may be called from the any thread at
    * any time
    *
-   * @param notify_force_flush Flag to indicate whether to notify force flush completion.
+   * @param notify_force_flush Sequence to indicate whether to notify force flush completion.
    * @param synchronization_data Synchronization data to be notified.
    */
-  static void NotifyCompletion(bool notify_force_flush,
+  static void NotifyCompletion(uint64_t notify_force_flush,
                                const std::unique_ptr<SpanExporter> &exporter,
                                const std::shared_ptr<SynchronizationData> &synchronization_data);
 
@@ -143,11 +166,12 @@ protected:
   const size_t max_export_batch_size_;
 
   /* The buffer/queue to which the ended spans are added */
-  common::CircularBuffer<Recordable> buffer_;
+  opentelemetry::sdk::common::CircularBuffer<Recordable> buffer_;
 
   std::shared_ptr<SynchronizationData> synchronization_data_;
 
   /* The background worker thread */
+  std::shared_ptr<sdk::common::ThreadInstrumentation> worker_thread_instrumentation_;
   std::thread worker_thread_;
 };
 

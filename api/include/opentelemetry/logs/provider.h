@@ -39,7 +39,7 @@ public:
   /**
    * Changes the singleton LoggerProvider.
    */
-  static void SetLoggerProvider(nostd::shared_ptr<LoggerProvider> tp) noexcept
+  static void SetLoggerProvider(const nostd::shared_ptr<LoggerProvider> &tp) noexcept
   {
     std::lock_guard<common::SpinLockMutex> guard(GetLock());
     GetProvider() = tp;
@@ -60,7 +60,7 @@ public:
   /**
    * Changes the singleton EventLoggerProvider.
    */
-  static void SetEventLoggerProvider(nostd::shared_ptr<EventLoggerProvider> tp) noexcept
+  static void SetEventLoggerProvider(const nostd::shared_ptr<EventLoggerProvider> &tp) noexcept
   {
     std::lock_guard<common::SpinLockMutex> guard(GetLock());
     GetEventProvider() = tp;
@@ -73,8 +73,8 @@ private:
     return provider;
   }
 
-  OPENTELEMETRY_API_SINGLETON static nostd::shared_ptr<EventLoggerProvider>
-      &GetEventProvider() noexcept
+  OPENTELEMETRY_API_SINGLETON static nostd::shared_ptr<EventLoggerProvider> &
+  GetEventProvider() noexcept
   {
     static nostd::shared_ptr<EventLoggerProvider> provider(new NoopEventLoggerProvider);
     return provider;

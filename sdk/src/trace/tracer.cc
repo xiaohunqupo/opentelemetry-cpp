@@ -1,10 +1,35 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <stdint.h>
+#include <chrono>
+#include <map>
+#include <new>
+#include <utility>
+
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/context/context.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/instrumentationscope/scope_configurator.h"
+#include "opentelemetry/sdk/trace/id_generator.h"
+#include "opentelemetry/sdk/trace/sampler.h"
 #include "opentelemetry/sdk/trace/tracer.h"
-#include "opentelemetry/context/runtime_context.h"
+#include "opentelemetry/sdk/trace/tracer_config.h"
+#include "opentelemetry/sdk/trace/tracer_context.h"
 #include "opentelemetry/trace/context.h"
 #include "opentelemetry/trace/noop.h"
+#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/span_context_kv_iterable.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/span_startoptions.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/trace/trace_state.h"
+#include "opentelemetry/version.h"
 
 #include "src/trace/span.h"
 
@@ -13,10 +38,14 @@ namespace sdk
 {
 namespace trace
 {
+const std::shared_ptr<opentelemetry::trace::NoopTracer> Tracer::kNoopTracer =
+    std::make_shared<opentelemetry::trace::NoopTracer>();
 
 Tracer::Tracer(std::shared_ptr<TracerContext> context,
                std::unique_ptr<InstrumentationScope> instrumentation_scope) noexcept
-    : instrumentation_scope_{std::move(instrumentation_scope)}, context_{context}
+    : instrumentation_scope_{std::move(instrumentation_scope)},
+      context_{std::move(context)},
+      tracer_config_(context_->GetTracerConfigurator().ComputeConfig(*instrumentation_scope_))
 {}
 
 nostd::shared_ptr<opentelemetry::trace::Span> Tracer::StartSpan(
@@ -25,6 +54,10 @@ nostd::shared_ptr<opentelemetry::trace::Span> Tracer::StartSpan(
     const opentelemetry::trace::SpanContextKeyValueIterable &links,
     const opentelemetry::trace::StartSpanOptions &options) noexcept
 {
+  if (!tracer_config_.IsEnabled())
+  {
+    return kNoopTracer->StartSpan(name, attributes, links, options);
+  }
   opentelemetry::trace::SpanContext parent_context = GetCurrentSpan()->GetContext();
   if (nostd::holds_alternative<opentelemetry::trace::SpanContext>(options.parent))
   {
@@ -43,36 +76,63 @@ nostd::shared_ptr<opentelemetry::trace::Span> Tracer::StartSpan(
     {
       parent_context = span_context;
     }
+    else
+    {
+      if (opentelemetry::trace::IsRootSpan(context))
+      {
+        parent_context = opentelemetry::trace::SpanContext{false, false};
+      }
+    }
   }
 
+  IdGenerator &generator = GetIdGenerator();
   opentelemetry::trace::TraceId trace_id;
-  opentelemetry::trace::SpanId span_id = GetIdGenerator().GenerateSpanId();
+  opentelemetry::trace::SpanId span_id = generator.GenerateSpanId();
   bool is_parent_span_valid            = false;
+  uint8_t flags                        = 0;
 
   if (parent_context.IsValid())
   {
     trace_id             = parent_context.trace_id();
+    flags                = parent_context.trace_flags().flags();
     is_parent_span_valid = true;
   }
   else
   {
-    trace_id = GetIdGenerator().GenerateTraceId();
+    trace_id = generator.GenerateTraceId();
+    if (generator.IsRandom())
+    {
+      flags = opentelemetry::trace::TraceFlags::kIsRandom;
+    }
   }
 
   auto sampling_result = context_->GetSampler().ShouldSample(parent_context, trace_id, name,
                                                              options.kind, attributes, links);
-  auto trace_flags =
-      sampling_result.IsSampled()
-          ? opentelemetry::trace::TraceFlags{opentelemetry::trace::TraceFlags::kIsSampled}
-          : opentelemetry::trace::TraceFlags{};
+  if (sampling_result.IsSampled())
+  {
+    flags |= opentelemetry::trace::TraceFlags::kIsSampled;
+  }
+
+#if 1
+  /* https://github.com/open-telemetry/opentelemetry-specification as of v1.29.0 */
+  /* Support W3C Trace Context version 1. */
+  flags &= opentelemetry::trace::TraceFlags::kAllW3CTraceContext1Flags;
+#endif
+
+#if 0
+  /* Waiting for https://github.com/open-telemetry/opentelemetry-specification/issues/3411 */
+  /* Support W3C Trace Context version 2. */
+  flags &= opentelemetry::trace::TraceFlags::kAllW3CTraceContext2Flags;
+#endif
+
+  opentelemetry::trace::TraceFlags trace_flags(flags);
 
   auto span_context =
       std::unique_ptr<opentelemetry::trace::SpanContext>(new opentelemetry::trace::SpanContext(
           trace_id, span_id, trace_flags, false,
-          sampling_result.trace_state
-              ? sampling_result.trace_state
-              : is_parent_span_valid ? parent_context.trace_state()
-                                     : opentelemetry::trace::TraceState::GetDefault()));
+          sampling_result.trace_state ? sampling_result.trace_state
+          : is_parent_span_valid      ? parent_context.trace_state()
+                                      : opentelemetry::trace::TraceState::GetDefault()));
 
   if (!sampling_result.IsRecording())
   {
@@ -115,7 +175,7 @@ void Tracer::ForceFlushWithMicroseconds(uint64_t timeout) noexcept
 void Tracer::CloseWithMicroseconds(uint64_t timeout) noexcept
 {
   // Trace context is shared by many tracers.So we just call ForceFlush to flush all pending spans
-  // and do not  shutdown it.
+  // and do not shutdown it.
   if (context_)
   {
     context_->ForceFlush(

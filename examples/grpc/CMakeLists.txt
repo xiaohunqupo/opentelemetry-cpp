@@ -5,7 +5,7 @@
 get_filename_component(proto_file "./protos/messages.proto" ABSOLUTE)
 get_filename_component(proto_file_path "${proto_file}" PATH)
 
-message("PATH:${proto_file_path}:${proto_file}")
+message(STATUS "PATH:${proto_file_path}:${proto_file}")
 # Generated sources
 set(example_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/messages.pb.cc")
 set(example_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/messages.pb.h")
@@ -25,6 +25,9 @@ add_library(example_grpc_proto ${example_grpc_srcs} ${example_grpc_hdrs}
 
 patch_protobuf_targets(example_grpc_proto)
 
+# Disable include-what-you-use on generated code.
+set_target_properties(example_grpc_proto PROPERTIES CXX_INCLUDE_WHAT_YOU_USE "")
+
 include_directories(
   ${CMAKE_SOURCE_DIR}/exporters/ostream/include ${CMAKE_SOURCE_DIR}/ext/include
   ${CMAKE_SOURCE_DIR}/api/include/ ${CMAKE_SOURCE_DIR/})
@@ -39,7 +42,7 @@ else()
   target_link_libraries(example_grpc_proto PUBLIC gRPC::grpc++
                                                   ${Protobuf_LIBRARIES})
 endif()
-if(WITH_ABSEIL)
+if(WITH_ABSEIL OR WITH_OTLP_GRPC)
   target_link_libraries(example_grpc_proto PUBLIC absl::bad_variant_access)
 endif()
 

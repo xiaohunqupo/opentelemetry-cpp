@@ -1,16 +1,28 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/exporters/otlp/otlp_http_exporter_factory.h"
-#include "opentelemetry/exporters/otlp/otlp_http_exporter_options.h"
-#include "opentelemetry/sdk/common/global_log_handler.h"
-#include "opentelemetry/sdk/trace/processor.h"
-#include "opentelemetry/sdk/trace/simple_processor_factory.h"
-#include "opentelemetry/sdk/trace/tracer_provider_factory.h"
-#include "opentelemetry/trace/provider.h"
-
+#include <stdio.h>
+#include <string.h>
+#include <cstdint>
 #include <iostream>
 #include <string>
+#include <utility>
+
+#include "opentelemetry/exporters/otlp/otlp_http_exporter_factory.h"
+#include "opentelemetry/exporters/otlp/otlp_http_exporter_options.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/sdk/common/attribute_utils.h"
+#include "opentelemetry/sdk/common/global_log_handler.h"
+#include "opentelemetry/sdk/trace/exporter.h"
+#include "opentelemetry/sdk/trace/processor.h"
+#include "opentelemetry/sdk/trace/simple_processor_factory.h"
+#include "opentelemetry/sdk/trace/tracer_provider.h"
+#include "opentelemetry/sdk/trace/tracer_provider_factory.h"
+#include "opentelemetry/trace/provider.h"
+#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/tracer.h"
+#include "opentelemetry/trace/tracer_provider.h"
 
 namespace trace     = opentelemetry::trace;
 namespace trace_sdk = opentelemetry::sdk::trace;
@@ -26,7 +38,7 @@ const int TEST_FAILED = 1;
   Command line parameters.
 */
 
-enum test_mode
+enum test_mode : std::uint8_t
 {
   MODE_NONE,
   MODE_HTTP,
@@ -54,6 +66,8 @@ struct TestResult
   bool found_request_send_failure = false;
   bool found_export_error         = false;
   bool found_export_success       = false;
+  bool found_unknown_min_tls      = false;
+  bool found_unknown_max_tls      = false;
 
   void reset()
   {
@@ -62,12 +76,14 @@ struct TestResult
     found_request_send_failure = false;
     found_export_error         = false;
     found_export_success       = false;
+    found_unknown_min_tls      = false;
+    found_unknown_max_tls      = false;
   }
 };
 
 struct TestResult g_test_result;
 
-void parse_error_msg(TestResult *result, std::string msg)
+void parse_error_msg(TestResult *result, const std::string &msg)
 {
   static std::string connection_failed("Session state: connection failed.");
 
@@ -96,13 +112,27 @@ void parse_error_msg(TestResult *result, std::string msg)
   {
     result->found_export_error = true;
   }
+
+  static std::string unknown_min_tls("Unknown min TLS version");
+
+  if (msg.find(unknown_min_tls) != std::string::npos)
+  {
+    result->found_unknown_min_tls = true;
+  }
+
+  static std::string unknown_max_tls("Unknown max TLS version");
+
+  if (msg.find(unknown_max_tls) != std::string::npos)
+  {
+    result->found_unknown_max_tls = true;
+  }
 }
 
-void parse_warning_msg(TestResult * /* result */, std::string /* msg */) {}
+void parse_warning_msg(TestResult * /* result */, const std::string & /* msg */) {}
 
-void parse_info_msg(TestResult * /* result */, std::string /* msg */) {}
+void parse_info_msg(TestResult * /* result */, const std::string & /* msg */) {}
 
-void parse_debug_msg(TestResult *result, std::string msg)
+void parse_debug_msg(TestResult *result, const std::string &msg)
 {
   static std::string export_success("Export 1 trace span(s) success");
 
@@ -128,20 +158,22 @@ public:
 
     switch (level)
     {
+      case opentelemetry::sdk::common::internal_log::LogLevel::None:
+        break;
       case opentelemetry::sdk::common::internal_log::LogLevel::Error:
-        std::cout << " - [E] " << msg << std::endl;
+        std::cout << " - [E] " << msg << '\n';
         parse_error_msg(&g_test_result, msg);
         break;
       case opentelemetry::sdk::common::internal_log::LogLevel::Warning:
-        std::cout << " - [W] " << msg << std::endl;
+        std::cout << " - [W] " << msg << '\n';
         parse_warning_msg(&g_test_result, msg);
         break;
       case opentelemetry::sdk::common::internal_log::LogLevel::Info:
-        std::cout << " - [I] " << msg << std::endl;
+        std::cout << " - [I] " << msg << '\n';
         parse_info_msg(&g_test_result, msg);
         break;
       case opentelemetry::sdk::common::internal_log::LogLevel::Debug:
-        std::cout << " - [D] " << msg << std::endl;
+        std::cout << " - [D] " << msg << '\n';
         parse_debug_msg(&g_test_result, msg);
         break;
     }
@@ -171,8 +203,6 @@ void payload()
   auto span = tracer->StartSpan(k_span_name);
   span->SetAttribute(k_attr_test_name, opt_test_name);
   span->End();
-
-  tracer->ForceFlushWithMicroseconds(1000000);
 }
 
 void cleanup()
@@ -308,7 +338,6 @@ struct test_case
 
 int test_basic();
 
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
 int test_cert_not_found();
 int test_cert_invalid();
 int test_cert_unreadable();
@@ -321,9 +350,7 @@ int test_client_key_not_found();
 int test_client_key_invalid();
 int test_client_key_unreadable();
 int test_client_key_ok();
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
 
-#ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
 int test_min_tls_unknown();
 int test_min_tls_10();
 int test_min_tls_11();
@@ -350,10 +377,10 @@ int test_range_tls_12_13();
 int test_range_tls_13_10();
 int test_range_tls_13_11();
 int test_range_tls_13_12();
-#endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
+
+int test_gzip_compression();
 
 static const test_case all_tests[] = {{"basic", test_basic},
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
                                       {"cert-not-found", test_cert_not_found},
                                       {"cert-invalid", test_cert_invalid},
                                       {"cert-unreadable", test_cert_unreadable},
@@ -366,9 +393,6 @@ static const test_case all_tests[] = {{"basic", test_basic},
                                       {"client-key-invalid", test_client_key_invalid},
                                       {"client-key-unreadable", test_client_key_unreadable},
                                       {"client-key-ok", test_client_key_ok},
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
-
-#ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
                                       {"min-tls-unknown", test_min_tls_unknown},
                                       {"min-tls-10", test_min_tls_10},
                                       {"min-tls-11", test_min_tls_11},
@@ -395,7 +419,7 @@ static const test_case all_tests[] = {{"basic", test_basic},
                                       {"range-tls-13-10", test_range_tls_13_10},
                                       {"range-tls-13-11", test_range_tls_13_11},
                                       {"range-tls-13-12", test_range_tls_13_12},
-#endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
+                                      {"gzip-compression", test_gzip_compression},
                                       {"", nullptr}};
 
 void list_test_cases()
@@ -404,12 +428,12 @@ void list_test_cases()
 
   while (current->m_func != nullptr)
   {
-    std::cout << current->m_name << std::endl;
+    std::cout << current->m_name << '\n';
     current++;
   }
 }
 
-int run_test_case(std::string name)
+int run_test_case(const std::string &name)
 {
   const test_case *current = all_tests;
 
@@ -423,7 +447,7 @@ int run_test_case(std::string name)
     current++;
   }
 
-  std::cerr << "Unknown test <" << name << ">" << std::endl;
+  std::cerr << "Unknown test <" << name << ">" << '\n';
   return 1;
 }
 
@@ -513,6 +537,24 @@ int expect_request_send_failed()
   return TEST_FAILED;
 }
 
+int expect_unknown_min_tls()
+{
+  if (g_test_result.found_export_error && g_test_result.found_unknown_min_tls)
+  {
+    return TEST_PASSED;
+  }
+  return TEST_FAILED;
+}
+
+int expect_unknown_max_tls()
+{
+  if (g_test_result.found_export_error && g_test_result.found_unknown_max_tls)
+  {
+    return TEST_PASSED;
+  }
+  return TEST_FAILED;
+}
+
 int expect_export_failed()
 {
   /*
@@ -560,8 +602,6 @@ int test_basic()
 
   return expect_connection_failed();
 }
-
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
 
 int test_cert_not_found()
 {
@@ -908,9 +948,6 @@ int test_client_key_ok()
 
   return expect_success();
 }
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
-
-#ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
 
 int test_min_tls_unknown()
 {
@@ -939,7 +976,7 @@ int test_min_tls_unknown()
     return expect_export_failed();
   }
 
-  return expect_connection_failed();
+  return expect_unknown_min_tls();
 }
 
 int test_min_tls_10()
@@ -974,7 +1011,7 @@ int test_min_tls_10()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_min_tls_11()
@@ -1009,7 +1046,7 @@ int test_min_tls_11()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_min_tls_12()
@@ -1109,7 +1146,7 @@ int test_max_tls_unknown()
     return expect_export_failed();
   }
 
-  return expect_connection_failed();
+  return expect_unknown_max_tls();
 }
 
 int test_max_tls_10()
@@ -1145,7 +1182,7 @@ int test_max_tls_10()
   }
 
   // No support for TLS 1.0
-  return expect_connection_failed();
+  return expect_unknown_max_tls();
 }
 
 int test_max_tls_11()
@@ -1181,7 +1218,7 @@ int test_max_tls_11()
   }
 
   // No support for TLS 1.1
-  return expect_connection_failed();
+  return expect_unknown_max_tls();
 }
 
 int test_max_tls_12()
@@ -1288,7 +1325,7 @@ int test_range_tls_10()
   }
 
   // No support for TLS 1.0
-  return expect_connection_failed();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_11()
@@ -1325,7 +1362,7 @@ int test_range_tls_11()
   }
 
   // No support for TLS 1.0
-  return expect_connection_failed();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_12()
@@ -1434,7 +1471,7 @@ int test_range_tls_10_11()
   }
 
   // No support for TLS 1.0, TLS 1.1
-  return expect_connection_failed();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_10_12()
@@ -1470,7 +1507,7 @@ int test_range_tls_10_12()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_10_13()
@@ -1506,7 +1543,7 @@ int test_range_tls_10_13()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_11_10()
@@ -1574,7 +1611,7 @@ int test_range_tls_11_12()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_11_13()
@@ -1610,7 +1647,7 @@ int test_range_tls_11_13()
     return expect_connection_failed();
   }
 
-  return expect_success();
+  return expect_unknown_min_tls();
 }
 
 int test_range_tls_12_10()
@@ -1809,4 +1846,35 @@ int test_range_tls_13_12()
   return expect_connection_failed();
 }
 
-#endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
+int test_gzip_compression()
+{
+  otlp::OtlpHttpExporterOptions opts;
+
+  set_common_opts(opts);
+  opts.compression = "gzip";
+
+  instrumented_payload(opts);
+
+  if (opt_mode == MODE_NONE)
+  {
+    return expect_connection_failed();
+  }
+
+  if (!opt_secure && (opt_mode == MODE_HTTP))
+  {
+    return expect_success();
+  }
+
+  if (!opt_secure && (opt_mode == MODE_HTTPS))
+  {
+    return expect_export_failed();
+  }
+
+  if (opt_secure && (opt_mode == MODE_HTTP))
+  {
+    return expect_connection_failed();
+  }
+
+  // Impossible
+  return expect_connection_failed();
+}

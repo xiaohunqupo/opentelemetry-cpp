@@ -46,45 +46,7 @@ N/A
 
 ## [opentelemetry-cpp API]
 
-### Jaeger propagator
-
-#### Announcement (Jaeger)
-
-* Version: 1.8.2
-* Date: 2023-01-31
-* PR: [DEPRECATION] Deprecate the Jaeger exporter
-  [#1923](https://github.com/open-telemetry/opentelemetry-cpp/pull/1923)
-
-This PR also listed the Jaeger propagator as deprecated.
-
-#### Motivation (Jaeger)
-
-The Jaeger Exporter is now (July 2023) removed from the OpenTelemetry specification.
-
-The Jaeger Propagator remains, because changing propagation is a longer
-process compared to changing an export format.
-
-New deployments however are encouraged to use a W3C compliant propagator,
-and avoid the Jaeger propagator, which is now deprecated.
-
-#### Scope (Jaeger)
-
-The following are deprecated and planned for removal:
-
-* the API header `opentelemetry/trace/propagation/jaeger.h`, including:
-  * the C++ class `JaegerPropagator`
-
-#### Mitigation (Jaeger)
-
-Use a W3C compliant propagator instead.
-
-That is, use class HttpTraceContext and "traceparent" tags.
-
-Do not use class JaegerPropagator and "uber-trace-id" tags.
-
-#### Planned removal (Jaeger)
-
-No date set yet for the Jaeger Propagator.
+N/A
 
 ## [opentelemetry-cpp SDK]
 
@@ -92,90 +54,86 @@ N/A
 
 ## [opentelemetry-cpp Exporter]
 
-### ZPages exporter
-
-#### Announcement (ZPages)
-
-* Version: 1.11.0
-* Date: 2023-09-01
-* PR: [DEPRECATION] Deprecate ZPAGES
-  [#2291](https://github.com/open-telemetry/opentelemetry-cpp/pull/2291)
-
-#### Motivation (ZPages)
-
-The ZPages specification itself was introduced in 2020,
-and has been experimental ever since,
-not getting a lot of attention, and never reaching a stable status.
-
-Several other opentelemetry projects have implemented support for zpages,
-only to later deprecate and then remove the zpages implementation (Java,
-C#), abandoning the zpages feature.
-
-In this context, it does not make sense to continue to maintain the zpages
-code in opentelemetry-cpp.
-
-#### Scope (ZPages)
-
-The following are deprecated and planned for removal:
-
-* all the API headers located under
-  `ext/include/opentelemetry/ext/zpages/`, including:
-  * the C++ class `ThreadsafeSpanData`
-  * the C++ class `TracezDataAggregator`
-  * the C++ class `TracezHttpServer`
-  * the C++ class `TracezSpanProcessor`
-  * the C++ class `TracezSharedData`
-  * the C++ class `ZPages`
-  * the C++ class `zPagesHttpServer`
-* all the code and doc located under `ext/src/zpages/`
-* all the tests located under `ext/test/zpages/`
-* the zpages exporter library(`opentelemetry_zpages`)
-* the zpages build options in CMake (`WITH_ZPAGES`)
-
-The following code is no longer considered public, will no longer be
-installed, and will no longer be useable outside of
-the opentelemetry-cpp implementation:
-
-* all the API headers located under
-  `ext/include/opentelemetry/ext/http/server`, including:
-  * the C++ class `FileHttpServer`
-  * the C++ class `HttpRequestCallback`
-  * the C++ class `HttpServer`
-  * the C++ class `HttpRequestHandler`
-  * the C++ class `SocketCallback`
-
-This implementation of an HTTP server is meant to be used for testing only,
-it is not production ready.
-
-#### Mitigation (ZPages)
-
-Consider using a different exporter,
-for example the OTLP exporter (both OTLP HTTP and OTLP GRPC are supported),
-to expose trace data to a separate trace backend.
-
-Note that this changes the access pattern:
-
-* with zpages, data is only available locally (in process)
-* with other exporters, data is available externally (not in process)
-
-Our assessment is that the zpages implementation is no longer in use,
-and can be removed.
-
-If that assessment is incorrect (i.e., if you own a project that depends
-on the zpage exporter from opentelemetry-cpp), please comment on the
-removal issue
-[#2292](https://github.com/open-telemetry/opentelemetry-cpp/issues/2292).
-
-An alternative to zpage removal is to move the code to the
-opentelemetry-cpp-contrib github
-[repository](https://github.com/open-telemetry/opentelemetry-cpp-contrib).
-
-Contributions to migrate the code, and maintain zpages, are welcome.
-
-#### Planned removal (ZPages)
-
-* Date: December, 2023
+N/A
 
 ## [Documentation]
 
 N/A
+
+## Semantic conventions
+
+### Header files "semantic_conventions.h"
+
+#### Announcement (semantic_conventions.h)
+
+Deprecation is announced as part of the migration to weaver:
+
+* `Version:` release following opentelemetry-cpp 1.17.0
+* `Date:` Nov 9, 2024
+* `PR:` [PR 3105](https://github.com/open-telemetry/opentelemetry-cpp/pull/3105)
+
+#### Motivation (semantic_conventions.h)
+
+The header files for semantic conventions are generated automatically.
+The tooling to generate these files is changing:
+
+* before, the build-tool repository was used
+* now, the weaver repository is used
+
+Changes in tooling allows to generate code that is better organized,
+with dedicated header files per group of semantic conventions,
+instead of a single header file for everything.
+
+#### Scope (semantic_conventions.h)
+
+The following files:
+
+* `api/include/opentelemetry/trace/semantic_conventions.h`
+* `sdk/include/opentelemetry/sdk/resource/semantic_conventions.h`
+
+are now deprecated.
+
+They correspond to semantic conventions v1.27.0,
+and will no longer be maintained up to date.
+
+These files will be removed in the future.
+
+#### Mitigation (semantic_conventions.h)
+
+Two things have changed:
+
+* the header file to use
+* the symbol name to use.
+
+Before, the semantic convention for `url.full` was:
+
+* declared in file `semantic_conventions.h`
+* declared as symbol `SemanticConventions::kUrlFull`
+
+Now, the `url.full` convention, which is part or the `url` group, is:
+
+* declared in file `semconv/url_attributes.h`
+* declared as symbol `semconv::url::kUrlFull`
+
+Application code that uses semantic conventions must be adjusted
+accordingly.
+
+In addition, semantic conventions that are not marked as stable
+are generated in a different header file, placed under directory
+`incubating`, to better separate stable and non stable code.
+
+For example, file `semconv/incubating/url_attributes.h`
+defines `semconv::url::kUrlDomain`,
+which is not marked as stable in semconv v1.27.0
+
+#### Planned removal (semantic_conventions.h)
+
+The following files:
+
+* `api/include/opentelemetry/trace/semantic_conventions.h`
+* `sdk/include/opentelemetry/sdk/resource/semantic_conventions.h`
+
+will be removed.
+
+The removal date is planned for July 1, 2025.
+This allows more than six months for applications to adjust.

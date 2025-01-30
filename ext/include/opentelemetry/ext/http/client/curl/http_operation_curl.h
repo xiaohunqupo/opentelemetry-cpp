@@ -13,6 +13,7 @@
 #  include <future>
 #endif
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <regex>
@@ -38,9 +39,9 @@ namespace client
 {
 namespace curl
 {
-const std::chrono::milliseconds default_http_conn_timeout(5000);  // ms
-const std::string http_status_regexp = "HTTP\\/\\d\\.\\d (\\d+)\\ .*";
-const std::string http_header_regexp = "(.*)\\: (.*)\\n*";
+const std::chrono::milliseconds kDefaultHttpConnTimeout(5000);  // ms
+const std::string kHttpStatusRegexp = "HTTP\\/\\d\\.\\d (\\d+)\\ .*";
+const std::string kHttpHeaderRegexp = "(.*)\\: (.*)\\n*";
 
 class HttpClient;
 class Session;
@@ -70,7 +71,7 @@ struct HttpCurlEasyResource
     return *this;
   }
 
-  HttpCurlEasyResource(const HttpCurlEasyResource &other) = delete;
+  HttpCurlEasyResource(const HttpCurlEasyResource &other)            = delete;
   HttpCurlEasyResource &operator=(const HttpCurlEasyResource &other) = delete;
 };
 
@@ -102,6 +103,12 @@ private:
 
   static size_t ReadMemoryCallback(char *buffer, size_t size, size_t nitems, void *userp);
 
+  static int CurlLoggerCallback(const CURL * /* handle */,
+                                curl_infotype type,
+                                const char *data,
+                                size_t size,
+                                void * /* clientp */) noexcept;
+
 #if LIBCURL_VERSION_NUM >= 0x075000
   static int PreRequestCallback(void *clientp,
                                 char *conn_primary_ip,
@@ -124,34 +131,40 @@ private:
                                 double ulnow);
 #endif
 public:
-  void DispatchEvent(opentelemetry::ext::http::client::SessionState type, std::string reason = "");
+  void DispatchEvent(opentelemetry::ext::http::client::SessionState type,
+                     const std::string &reason = "");
 
   /**
    * Create local CURL instance for url and body
-   * @param method // HTTP Method
-   * @param url    // HTTP URL
+   * @param method   HTTP Method
+   * @param url   HTTP URL
    * @param callback
-   * @param request_mode // sync or async
-   * @param request  Request Headers
-   * @param body  Reques Body
-   * @param raw_response whether to parse the response
-   * @param httpConnTimeout   HTTP connection timeout in seconds
+   * @param request_mode   Sync or async
+   * @param request   Request Headers
+   * @param body   Request Body
+   * @param raw_response   Whether to parse the response
+   * @param http_conn_timeout   HTTP connection timeout in seconds
+   * @param reuse_connection   Whether connection should be reused or closed
+   * @param is_log_enabled   To intercept some information from cURL request
+   * @param retry_policy   Retry policy for select failure status codes
    */
   HttpOperation(opentelemetry::ext::http::client::Method method,
                 std::string url,
-#ifdef ENABLE_HTTP_SSL_PREVIEW
                 const opentelemetry::ext::http::client::HttpSslOptions &ssl_options,
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
                 opentelemetry::ext::http::client::EventHandler *event_handle,
                 // Default empty headers and empty request body
                 const opentelemetry::ext::http::client::Headers &request_headers =
                     opentelemetry::ext::http::client::Headers(),
                 const opentelemetry::ext::http::client::Body &request_body =
                     opentelemetry::ext::http::client::Body(),
+                const opentelemetry::ext::http::client::Compression &compression =
+                    opentelemetry::ext::http::client::Compression::kNone,
                 // Default connectivity and response size options
                 bool is_raw_response                        = false,
-                std::chrono::milliseconds http_conn_timeout = default_http_conn_timeout,
-                bool reuse_connection                       = false);
+                std::chrono::milliseconds http_conn_timeout = kDefaultHttpConnTimeout,
+                bool reuse_connection                       = false,
+                bool is_log_enabled                         = false,
+                const opentelemetry::ext::http::client::RetryPolicy &retry_policy = {});
 
   /**
    * Destroy CURL instance
@@ -167,6 +180,16 @@ public:
    * Cleanup all resource of curl
    */
   void Cleanup();
+
+  /**
+   * Determine if operation is retryable
+   */
+  bool IsRetryable();
+
+  /**
+   * Calculate next time to retry request
+   */
+  std::chrono::system_clock::time_point NextRetryTime();
 
   /**
    * Setup request
@@ -208,7 +231,7 @@ public:
   bool WasAborted() { return is_aborted_.load(std::memory_order_acquire); }
 
   /**
-   * Return a copy of resposne headers
+   * Return a copy of response headers
    *
    * @return
    */
@@ -290,14 +313,20 @@ private:
   opentelemetry::ext::http::client::Method method_;
   std::string url_;
 
-#ifdef ENABLE_HTTP_SSL_PREVIEW
   const opentelemetry::ext::http::client::HttpSslOptions &ssl_options_;
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
 
   const Headers &request_headers_;
   const opentelemetry::ext::http::client::Body &request_body_;
   size_t request_nwrite_;
   opentelemetry::ext::http::client::SessionState session_state_;
+
+  const opentelemetry::ext::http::client::Compression &compression_;
+
+  const bool is_log_enabled_;
+
+  const RetryPolicy retry_policy_;
+  decltype(RetryPolicy::max_attempts) retry_attempts_;
+  std::chrono::system_clock::time_point last_attempt_time_;
 
   // Processed response headers and body
   long response_code_;

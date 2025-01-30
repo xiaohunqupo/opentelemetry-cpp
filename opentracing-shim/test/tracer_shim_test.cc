@@ -3,16 +3,46 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "shim_mocks.h"
+#include <gtest/gtest.h>
+#include <stdint.h>
+#include <iostream>
+#include <string>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "opentracing/expected/expected.hpp"
+#include "opentracing/noop.h"
+#include "opentracing/propagation.h"
+#include "opentracing/span.h"
+#include "opentracing/tracer.h"
+#include "opentracing/util.h"
+#include "opentracing/value.h"
+
+#include "opentelemetry/baggage/baggage.h"
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/context/propagation/text_map_propagator.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/opentracingshim/shim_utils.h"
 #include "opentelemetry/opentracingshim/span_context_shim.h"
-#include "opentelemetry/opentracingshim/span_shim.h"
 #include "opentelemetry/opentracingshim/tracer_shim.h"
+#include "opentelemetry/trace/default_span.h"
+#include "opentelemetry/trace/provider.h"
+#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/span_context_kv_iterable.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/span_startoptions.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/trace/tracer.h"
+#include "opentelemetry/trace/tracer_provider.h"
 
-#include "opentracing/noop.h"
-
-#include <gtest/gtest.h>
+#include "shim_mocks.h"
 
 namespace trace_api = opentelemetry::trace;
 namespace nostd     = opentelemetry::nostd;
@@ -217,4 +247,98 @@ TEST_F(TracerShimTest, ExtractOnlyBaggage)
   std::string value;
   ASSERT_TRUE(span_context_shim->BaggageItem("foo", value));
   ASSERT_EQ(value, "bar");
+}
+
+class TracerWithSpanContext : public trace_api::Tracer
+{
+public:
+  nostd::shared_ptr<trace_api::Span> StartSpan(
+      nostd::string_view name,
+      const common::KeyValueIterable & /* attributes */,
+      const trace_api::SpanContextKeyValueIterable & /* links */,
+      const trace_api::StartSpanOptions & /* options */) noexcept override
+  {
+    constexpr uint8_t trace_id_buf[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
+    trace_api::TraceId trace_id(trace_id_buf);
+
+    constexpr uint8_t span_id_buf[] = {1, 2, 3, 4, 5, 6, 7, 8};
+    trace_api::SpanId span_id(span_id_buf);
+
+    auto span_context = trace_api::SpanContext(trace_id, span_id, GetTraceFlags(), false);
+    nostd::shared_ptr<trace_api::Span> result(new trace_api::DefaultSpan(span_context));
+
+    return result;
+  }
+
+  void ForceFlushWithMicroseconds(uint64_t /* timeout */) noexcept override {}
+
+  void CloseWithMicroseconds(uint64_t /* timeout */) noexcept override {}
+
+  static trace_api::TraceFlags GetTraceFlags()
+  {
+    return trace_api::TraceFlags(trace_api::TraceFlags::kIsSampled);
+  }
+};
+
+class TracerWithSpanContextProvider : public trace_api::TracerProvider
+{
+public:
+  static nostd::shared_ptr<trace_api::TracerProvider> Create()
+  {
+    nostd::shared_ptr<trace_api::TracerProvider> result(new TracerWithSpanContextProvider());
+    return result;
+  }
+
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+  nostd::shared_ptr<trace_api::Tracer> GetTracer(
+      nostd::string_view /* name */,
+      nostd::string_view /* version */,
+      nostd::string_view /* schema_url */,
+      const common::KeyValueIterable * /* attributes */) noexcept override
+  {
+    nostd::shared_ptr<trace_api::Tracer> result(new TracerWithSpanContext());
+    return result;
+  }
+#else
+  nostd::shared_ptr<trace_api::Tracer> GetTracer(
+      nostd::string_view /* name */,
+      nostd::string_view /* version */,
+      nostd::string_view /* schema_url */) noexcept override
+  {
+    nostd::shared_ptr<trace_api::Tracer> result(new TracerWithSpanContext());
+    return result;
+  }
+#endif
+};
+
+TEST_F(TracerShimTest, InjectSpanKey)
+{
+  using context::propagation::TextMapPropagator;
+
+  auto local_text_map_format     = new MockPropagator();
+  auto local_http_headers_format = new MockPropagator();
+
+  ASSERT_FALSE(local_text_map_format->is_injected);
+  ASSERT_FALSE(local_http_headers_format->is_injected);
+
+  nostd::shared_ptr<trace_api::TracerProvider> tracer_provider =
+      TracerWithSpanContextProvider::Create();
+  auto local_tracer_shim = shim::TracerShim::createTracerShim(
+      tracer_provider,
+      {.text_map     = nostd::shared_ptr<TextMapPropagator>(local_text_map_format),
+       .http_headers = nostd::shared_ptr<TextMapPropagator>(local_http_headers_format)});
+
+  std::unordered_map<std::string, std::string> text_map;
+  auto span_shim = local_tracer_shim->StartSpan("a");
+  local_tracer_shim->Inject(span_shim->context(), TextMapCarrier{text_map});
+
+  ASSERT_TRUE(local_text_map_format->is_injected);
+  ASSERT_FALSE(local_http_headers_format->is_injected);
+
+  ASSERT_EQ(span_shim->context().ToTraceID(), text_map[MockPropagator::kTraceIdKey]);
+  ASSERT_EQ(span_shim->context().ToSpanID(), text_map[MockPropagator::kSpanIdKey]);
+
+  char flag_buffer[2];
+  TracerWithSpanContext::GetTraceFlags().ToLowerBase16(flag_buffer);
+  ASSERT_EQ(std::string(flag_buffer, 2), text_map[MockPropagator::kTraceFlagsKey]);
 }

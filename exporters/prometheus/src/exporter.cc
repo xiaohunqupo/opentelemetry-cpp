@@ -1,8 +1,19 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <prometheus/exposer.h>
+#include <chrono>
+#include <exception>
+#include <memory>
+#include <ostream>
+#include <string>
+
+#include "opentelemetry/exporters/prometheus/collector.h"
 #include "opentelemetry/exporters/prometheus/exporter.h"
+#include "opentelemetry/exporters/prometheus/exporter_options.h"
 #include "opentelemetry/sdk/common/global_log_handler.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 
@@ -31,7 +42,7 @@ PrometheusExporter::PrometheusExporter(const PrometheusExporterOptions &options)
     return;
   }
   collector_ = std::shared_ptr<PrometheusCollector>(
-      new PrometheusCollector(this, options_.populate_target_info));
+      new PrometheusCollector(this, options_.populate_target_info, options_.without_otel_scope));
 
   exposer_->RegisterCollectable(collector_);
 }

@@ -1,20 +1,27 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <chrono>
+#include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/exporters/otlp/otlp_http.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h"
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
+#include "opentelemetry/metrics/meter_provider.h"
 #include "opentelemetry/metrics/provider.h"
 #include "opentelemetry/sdk/common/global_log_handler.h"
-#include "opentelemetry/sdk/metrics/aggregation/default_aggregation.h"
-#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h"
 #include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_factory.h"
-#include "opentelemetry/sdk/metrics/meter.h"
+#include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_options.h"
+#include "opentelemetry/sdk/metrics/meter_context.h"
 #include "opentelemetry/sdk/metrics/meter_context_factory.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/metrics/meter_provider_factory.h"
-
-#include <memory>
-#include <thread>
+#include "opentelemetry/sdk/metrics/metric_reader.h"
+#include "opentelemetry/sdk/metrics/push_metric_exporter.h"
 
 #ifdef BAZEL_BUILD
 #  include "examples/common/metrics_foo_library/foo_library.h"
@@ -125,16 +132,29 @@ int main(int argc, char *argv[])
   {
     foo_library::histogram_example(name);
   }
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+  else if (example_type == "gauge")
+  {
+    foo_library::gauge_example(name);
+  }
+#endif
   else
   {
     std::thread counter_example{&foo_library::counter_example, name};
     std::thread observable_counter_example{&foo_library::observable_counter_example, name};
     std::thread histogram_example{&foo_library::histogram_example, name};
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+    std::thread gauge_example{&foo_library::gauge_example, name};
+#endif
 
     counter_example.join();
     observable_counter_example.join();
     histogram_example.join();
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+    gauge_example.join();
+#endif
   }
 
   CleanupMetrics();
+  return 0;
 }

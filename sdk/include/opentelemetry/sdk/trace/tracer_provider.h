@@ -3,17 +3,21 @@
 
 #pragma once
 
-#include <map>
-#include <memory>
+#include <chrono>
 #include <mutex>
-#include <string>
 #include <vector>
 
 #include "opentelemetry/nostd/shared_ptr.h"
 #include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/sdk/trace/id_generator.h"
+#include "opentelemetry/sdk/trace/processor.h"
 #include "opentelemetry/sdk/trace/random_id_generator.h"
+#include "opentelemetry/sdk/trace/sampler.h"
 #include "opentelemetry/sdk/trace/samplers/always_on.h"
+#include "opentelemetry/sdk/trace/tracer.h"
+#include "opentelemetry/sdk/trace/tracer_context.h"
+#include "opentelemetry/trace/tracer.h"
 #include "opentelemetry/trace/tracer_provider.h"
 #include "opentelemetry/version.h"
 
@@ -22,11 +26,8 @@ namespace sdk
 {
 namespace trace
 {
-class SpanProcessor;
-class Tracer;
-class TracerContext;
 
-class TracerProvider final : public opentelemetry::trace::TracerProvider
+class OPENTELEMETRY_EXPORT TracerProvider final : public opentelemetry::trace::TracerProvider
 {
 public:
   /**
@@ -38,22 +39,34 @@ public:
    * not be a nullptr.
    * @param id_generator The custom id generator for this tracer provider. This must
    * not be a nullptr
+   * @param tracer_configurator Provides access to a function that computes the TracerConfig for
+   * Tracers provided by this TracerProvider.
    */
   explicit TracerProvider(
       std::unique_ptr<SpanProcessor> processor,
-      opentelemetry::sdk::resource::Resource resource =
+      const opentelemetry::sdk::resource::Resource &resource =
           opentelemetry::sdk::resource::Resource::Create({}),
       std::unique_ptr<Sampler> sampler = std::unique_ptr<AlwaysOnSampler>(new AlwaysOnSampler),
       std::unique_ptr<IdGenerator> id_generator =
-          std::unique_ptr<IdGenerator>(new RandomIdGenerator())) noexcept;
+          std::unique_ptr<IdGenerator>(new RandomIdGenerator()),
+      std::unique_ptr<instrumentationscope::ScopeConfigurator<TracerConfig>> tracer_configurator =
+          std::make_unique<instrumentationscope::ScopeConfigurator<TracerConfig>>(
+              instrumentationscope::ScopeConfigurator<TracerConfig>::Builder(
+                  TracerConfig::Default())
+                  .Build())) noexcept;
 
   explicit TracerProvider(
       std::vector<std::unique_ptr<SpanProcessor>> &&processors,
-      opentelemetry::sdk::resource::Resource resource =
+      const opentelemetry::sdk::resource::Resource &resource =
           opentelemetry::sdk::resource::Resource::Create({}),
       std::unique_ptr<Sampler> sampler = std::unique_ptr<AlwaysOnSampler>(new AlwaysOnSampler),
       std::unique_ptr<IdGenerator> id_generator =
-          std::unique_ptr<IdGenerator>(new RandomIdGenerator())) noexcept;
+          std::unique_ptr<IdGenerator>(new RandomIdGenerator()),
+      std::unique_ptr<instrumentationscope::ScopeConfigurator<TracerConfig>> tracer_configurator =
+          std::make_unique<instrumentationscope::ScopeConfigurator<TracerConfig>>(
+              instrumentationscope::ScopeConfigurator<TracerConfig>::Builder(
+                  TracerConfig::Default())
+                  .Build())) noexcept;
 
   /**
    * Initialize a new tracer provider with a specified context
@@ -100,7 +113,7 @@ public:
   /**
    * Shutdown the span processor associated with this tracer provider.
    */
-  bool Shutdown() noexcept;
+  bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
   /**
    * Force flush the span processor associated with this tracer provider.

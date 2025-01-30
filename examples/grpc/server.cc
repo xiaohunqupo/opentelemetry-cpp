@@ -1,33 +1,44 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#ifdef BAZEL_BUILD
-#  include "examples/grpc/protos/messages.grpc.pb.h"
-#else
-#  include "messages.grpc.pb.h"
-#endif
-
-#include "opentelemetry/trace/context.h"
-#include "opentelemetry/trace/semantic_conventions.h"
-#include "opentelemetry/trace/span_context_kv_iterable_view.h"
-#include "tracer_common.h"
-
-#include <grpcpp/grpcpp.h>
+#include <grpcpp/security/server_credentials.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
-
-#include <chrono>
-#include <fstream>
+#include <grpcpp/support/status.h>
+#include <grpcpp/support/string_ref.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <iostream>
 #include <map>
-#include <sstream>
 #include <string>
-#include <thread>
+#include <utility>
+
+#include "opentelemetry/context/propagation/global_propagator.h"
+#include "opentelemetry/context/propagation/text_map_propagator.h"
+#include "opentelemetry/context/runtime_context.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/semconv/incubating/rpc_attributes.h"
+#include "opentelemetry/trace/context.h"
+#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/span_startoptions.h"
+#include "opentelemetry/trace/tracer.h"
+#include "tracer_common.h"
+
+#ifdef BAZEL_BUILD
+#  include "examples/grpc/protos/messages.grpc.pb.h"
+#  include "examples/grpc/protos/messages.pb.h"
+#else
+#  include "messages.grpc.pb.h"
+#  include "messages.pb.h"
+#endif
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
-using grpc::ServerWriter;
 using grpc::Status;
 
 using grpc_example::Greeter;
@@ -39,6 +50,7 @@ using SpanContext = opentelemetry::trace::SpanContext;
 using namespace opentelemetry::trace;
 
 namespace context = opentelemetry::context;
+namespace semconv = opentelemetry::semconv;
 
 namespace
 {
@@ -49,7 +61,7 @@ public:
                const GreetRequest *request,
                GreetResponse *response) override
   {
-    for (auto elem : context->client_metadata())
+    for (const auto &elem : context->client_metadata())
     {
       std::cout << "ELEM: " << elem.first << " " << elem.second << "\n";
     }
@@ -68,18 +80,18 @@ public:
 
     std::string span_name = "GreeterService/Greet";
     auto span             = get_tracer("grpc")->StartSpan(span_name,
-                                              {{SemanticConventions::kRpcSystem, "grpc"},
-                                               {SemanticConventions::kRpcService, "GreeterService"},
-                                               {SemanticConventions::kRpcMethod, "Greet"},
-                                               {SemanticConventions::kRpcGrpcStatusCode, 0}},
-                                              options);
+                                                          {{semconv::rpc::kRpcSystem, "grpc"},
+                                                           {semconv::rpc::kRpcService, "GreeterService"},
+                                                           {semconv::rpc::kRpcMethod, "Greet"},
+                                                           {semconv::rpc::kRpcGrpcStatusCode, 0}},
+                                                          options);
     auto scope            = get_tracer("grpc")->WithActiveSpan(span);
 
     // Fetch and parse whatever HTTP headers we can from the gRPC request.
     span->AddEvent("Processing client attributes");
 
-    std::string req = request->request();
-    std::cout << std::endl << "grpc_client says: " << req << std::endl;
+    const std::string &req = request->request();
+    std::cout << '\n' << "grpc_client says: " << req << '\n';
     std::string message = "The pleasure is mine.";
     // Send response to client
     response->set_response(message);
@@ -102,7 +114,7 @@ void RunServer(uint16_t port)
   builder.AddListeningPort(address, grpc::InsecureServerCredentials());
 
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on port: " << address << std::endl;
+  std::cout << "Server listening on port: " << address << '\n';
   server->Wait();
   server->Shutdown();
 }

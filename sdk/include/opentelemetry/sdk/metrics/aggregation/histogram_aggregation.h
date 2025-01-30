@@ -3,11 +3,17 @@
 
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 #include "opentelemetry/common/spin_lock_mutex.h"
+#include "opentelemetry/nostd/variant.h"
 #include "opentelemetry/sdk/metrics/aggregation/aggregation.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation_config.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
 #include "opentelemetry/sdk/metrics/data/point_data.h"
 #include "opentelemetry/version.h"
 
@@ -93,8 +99,8 @@ void HistogramMerge(HistogramPointData &current,
   merge.record_min_max_ = current.record_min_max_ && delta.record_min_max_;
   if (merge.record_min_max_)
   {
-    merge.min_ = std::min(nostd::get<T>(current.min_), nostd::get<T>(delta.min_));
-    merge.max_ = std::max(nostd::get<T>(current.max_), nostd::get<T>(delta.max_));
+    merge.min_ = (std::min)(nostd::get<T>(current.min_), nostd::get<T>(delta.min_));
+    merge.max_ = (std::max)(nostd::get<T>(current.max_), nostd::get<T>(delta.max_));
   }
 }
 

@@ -54,9 +54,9 @@ public:
    *  Severity                                -> severity, severity_text
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -65,16 +65,15 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void EmitLogRecord(nostd::unique_ptr<LogRecord> &&log_record, ArgumentType &&... args)
+  void EmitLogRecord(nostd::unique_ptr<LogRecord> &&log_record, ArgumentType &&...args)
   {
     if (!log_record)
     {
       return;
     }
 
-    IgnoreTraitResult(
-        detail::LogRecordSetterTrait<typename std::decay<ArgumentType>::type>::template Set(
-            log_record.get(), std::forward<ArgumentType>(args))...);
+    IgnoreTraitResult(detail::LogRecordSetterTrait<typename std::decay<ArgumentType>::type>::Set(
+        log_record.get(), std::forward<ArgumentType>(args))...);
 
     EmitLogRecord(std::move(log_record));
   }
@@ -86,9 +85,9 @@ public:
    *  Severity                                -> severity, severity_text
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -97,13 +96,9 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void EmitLogRecord(ArgumentType &&... args)
+  void EmitLogRecord(ArgumentType &&...args)
   {
     nostd::unique_ptr<LogRecord> log_record = CreateLogRecord();
-    if (!log_record)
-    {
-      return;
-    }
 
     EmitLogRecord(std::move(log_record), std::forward<ArgumentType>(args)...);
   }
@@ -113,9 +108,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -124,7 +119,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Trace(ArgumentType &&... args) noexcept
+  void Trace(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -137,9 +132,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -148,7 +143,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Debug(ArgumentType &&... args) noexcept
+  void Debug(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -161,9 +156,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -172,7 +167,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Info(ArgumentType &&... args) noexcept
+  void Info(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -185,9 +180,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -196,7 +191,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Warn(ArgumentType &&... args) noexcept
+  void Warn(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -209,9 +204,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -220,7 +215,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Error(ArgumentType &&... args) noexcept
+  void Error(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -233,9 +228,9 @@ public:
    * @tparam args Arguments which can be used to set data of log record by type.
    *  string_view                             -> body
    *  AttributeValue                          -> body
-   *  SpanContext                             -> span_id,tace_id and trace_flags
+   *  SpanContext                             -> span_id,trace_id and trace_flags
    *  SpanId                                  -> span_id
-   *  TraceId                                 -> tace_id
+   *  TraceId                                 -> trace_id
    *  TraceFlags                              -> trace_flags
    *  SystemTimestamp                         -> timestamp
    *  system_clock::time_point                -> timestamp
@@ -244,7 +239,7 @@ public:
    *  span<pair<string_view, AttributeValue>> -> attributes(return type of MakeAttributes)
    */
   template <class... ArgumentType>
-  void Fatal(ArgumentType &&... args) noexcept
+  void Fatal(ArgumentType &&...args) noexcept
   {
     static_assert(
         !detail::LogRecordHasType<Severity, typename std::decay<ArgumentType>::type...>::value,
@@ -258,13 +253,19 @@ public:
 
   inline bool Enabled(Severity severity, const EventId &event_id) const noexcept
   {
-    OPENTELEMETRY_LIKELY_IF(Enabled(severity) == false) { return false; }
+    if OPENTELEMETRY_LIKELY_CONDITION (!Enabled(severity))
+    {
+      return false;
+    }
     return EnabledImplementation(severity, event_id);
   }
 
   inline bool Enabled(Severity severity, int64_t event_id) const noexcept
   {
-    OPENTELEMETRY_LIKELY_IF(Enabled(severity) == false) { return false; }
+    if OPENTELEMETRY_LIKELY_CONDITION (!Enabled(severity))
+    {
+      return false;
+    }
     return EnabledImplementation(severity, event_id);
   }
 

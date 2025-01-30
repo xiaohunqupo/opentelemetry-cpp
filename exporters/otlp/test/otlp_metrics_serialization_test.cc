@@ -1,10 +1,34 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/exporters/otlp/otlp_metric_utils.h"
-#include "opentelemetry/proto/metrics/v1/metrics.pb.h"
-
 #include <gtest/gtest.h>
+#include <stddef.h>
+#include <algorithm>
+#include <chrono>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/exporters/otlp/otlp_metric_utils.h"
+#include "opentelemetry/nostd/unique_ptr.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/common/attribute_utils.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/data/point_data.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/version.h"
+
+// clang-format off
+#include "opentelemetry/exporters/otlp/protobuf_include_prefix.h" // IWYU pragma: keep
+#include "opentelemetry/proto/collector/metrics/v1/metrics_service.pb.h"
+#include "opentelemetry/proto/common/v1/common.pb.h"
+#include "opentelemetry/proto/metrics/v1/metrics.pb.h"
+#include "opentelemetry/exporters/otlp/protobuf_include_suffix.h" // IWYU pragma: keep
+// clang-format on
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -130,6 +154,66 @@ static metrics_sdk::MetricData CreateObservableGaugeAggregationData()
   return data;
 }
 
+static metrics_sdk::MetricData CreateObservableCounterAggregationData()
+{
+  metrics_sdk::MetricData data;
+  data.start_ts = opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now());
+  metrics_sdk::InstrumentDescriptor inst_desc = {
+      "ObservableCounter", "test description", "test unit",
+      metrics_sdk::InstrumentType::kObservableCounter, metrics_sdk::InstrumentValueType::kDouble};
+  metrics_sdk::SumPointData s_data_1, s_data_2;
+  s_data_1.value_ = 1.23;
+  s_data_2.value_ = 4.56;
+
+  data.aggregation_temporality = metrics_sdk::AggregationTemporality::kCumulative;
+  data.end_ts = opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now());
+  data.instrument_descriptor = inst_desc;
+  metrics_sdk::PointDataAttributes point_data_attr_1, point_data_attr_2;
+  point_data_attr_1.attributes = {{"key1", "value1"}};
+  point_data_attr_1.point_data = s_data_1;
+
+  point_data_attr_2.attributes = {{"key2", "value2"}};
+  point_data_attr_2.point_data = s_data_2;
+  std::vector<metrics_sdk::PointDataAttributes> point_data_attr;
+  point_data_attr.push_back(point_data_attr_1);
+  point_data_attr.push_back(point_data_attr_2);
+  data.point_data_attr_ = std::move(point_data_attr);
+  return data;
+}
+
+static metrics_sdk::MetricData CreateObservableUpDownCounterAggregationData()
+{
+  metrics_sdk::MetricData data;
+  data.start_ts = opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now());
+  metrics_sdk::InstrumentDescriptor inst_desc = {
+      "ObservableUpDownCounter", "test description", "test unit",
+      metrics_sdk::InstrumentType::kObservableUpDownCounter,
+      metrics_sdk::InstrumentValueType::kDouble};
+  metrics_sdk::SumPointData s_data_1, s_data_2, s_data_3;
+  s_data_1.value_ = 1.23;
+  s_data_2.value_ = 4.56;
+  s_data_3.value_ = 2.34;
+
+  data.aggregation_temporality = metrics_sdk::AggregationTemporality::kCumulative;
+  data.end_ts = opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now());
+  data.instrument_descriptor = inst_desc;
+  metrics_sdk::PointDataAttributes point_data_attr_1, point_data_attr_2, point_data_attr_3;
+  point_data_attr_1.attributes = {{"key1", "value1"}};
+  point_data_attr_1.point_data = s_data_1;
+
+  point_data_attr_2.attributes = {{"key2", "value2"}};
+  point_data_attr_2.point_data = s_data_2;
+
+  point_data_attr_3.attributes = {{"key3", "value3"}};
+  point_data_attr_3.point_data = s_data_3;
+  std::vector<metrics_sdk::PointDataAttributes> point_data_attr;
+  point_data_attr.push_back(point_data_attr_1);
+  point_data_attr.push_back(point_data_attr_2);
+  point_data_attr.push_back(point_data_attr_3);
+  data.point_data_attr_ = std::move(point_data_attr);
+  return data;
+}
+
 TEST(OtlpMetricSerializationTest, Counter)
 {
   metrics_sdk::MetricData data = CreateSumAggregationData();
@@ -140,7 +224,7 @@ TEST(OtlpMetricSerializationTest, Counter)
   EXPECT_EQ(sum.is_monotonic(), true);
   for (size_t i = 0; i < 1; i++)
   {
-    auto proto_number_point = sum.data_points(i);
+    const auto &proto_number_point = sum.data_points(i);
     EXPECT_EQ(proto_number_point.as_double(), i == 0 ? 10.2 : 20.2);
   }
 
@@ -170,7 +254,7 @@ TEST(OtlpMetricSerializationTest, Histogram)
             proto::metrics::v1::AggregationTemporality::AGGREGATION_TEMPORALITY_CUMULATIVE);
   for (size_t i = 0; i < 1; i++)
   {
-    auto proto_number_point = histogram.data_points(i);
+    const auto &proto_number_point = histogram.data_points(i);
     EXPECT_EQ(proto_number_point.sum(), i == 0 ? 100.2 : 200.2);
   }
 
@@ -184,11 +268,77 @@ TEST(OtlpMetricSerializationTest, ObservableGauge)
   otlp_exporter::OtlpMetricUtils::ConvertGaugeMetric(data, &gauge);
   for (size_t i = 0; i < 1; i++)
   {
-    auto proto_number_point = gauge.data_points(i);
+    const auto &proto_number_point = gauge.data_points(i);
     EXPECT_EQ(proto_number_point.as_double(), i == 0 ? 30.2 : 50.2);
   }
 
   EXPECT_EQ(1, 1);
+}
+
+TEST(OtlpMetricSerializationTest, ObservableCounter)
+{
+  metrics_sdk::MetricData data = CreateObservableCounterAggregationData();
+  opentelemetry::proto::metrics::v1::Sum sum;
+  otlp_exporter::OtlpMetricUtils::ConvertSumMetric(data, &sum);
+  EXPECT_EQ(sum.aggregation_temporality(),
+            proto::metrics::v1::AggregationTemporality::AGGREGATION_TEMPORALITY_CUMULATIVE);
+  EXPECT_EQ(sum.is_monotonic(), true);
+  EXPECT_EQ(sum.data_points_size(), 2);
+  EXPECT_EQ(sum.data_points(0).as_double(), 1.23);
+  EXPECT_EQ(sum.data_points(1).as_double(), 4.56);
+
+  EXPECT_EQ(1, 1);
+}
+
+TEST(OtlpMetricSerializationTest, ObservableUpDownCounter)
+{
+  metrics_sdk::MetricData data = CreateObservableUpDownCounterAggregationData();
+  opentelemetry::proto::metrics::v1::Sum sum;
+  otlp_exporter::OtlpMetricUtils::ConvertSumMetric(data, &sum);
+  EXPECT_EQ(sum.aggregation_temporality(),
+            proto::metrics::v1::AggregationTemporality::AGGREGATION_TEMPORALITY_CUMULATIVE);
+  EXPECT_EQ(sum.is_monotonic(), false);
+  EXPECT_EQ(sum.data_points_size(), 3);
+  EXPECT_EQ(sum.data_points(0).as_double(), 1.23);
+  EXPECT_EQ(sum.data_points(1).as_double(), 4.56);
+  EXPECT_EQ(sum.data_points(2).as_double(), 2.34);
+
+  EXPECT_EQ(1, 1);
+}
+
+TEST(OtlpMetricSerializationTest, PopulateExportMetricsServiceRequest)
+{
+  const auto resource =
+      resource::Resource::Create({{"service.name", "test_service_name"}}, "resource_schema_url");
+  const auto scope = opentelemetry::sdk::instrumentationscope::InstrumentationScope::Create(
+      "scope_name", "scope_version", "scope_schema_url", {{"scope_key", "scope_value"}});
+
+  metrics_sdk::ScopeMetrics scope_metrics{scope.get(), CreateSumAggregationData()};
+  metrics_sdk::ResourceMetrics resource_metrics{&resource, scope_metrics};
+
+  proto::collector::metrics::v1::ExportMetricsServiceRequest request_proto;
+  otlp_exporter::OtlpMetricUtils::PopulateRequest(resource_metrics, &request_proto);
+
+  ASSERT_EQ(1, request_proto.resource_metrics_size());
+  const auto &resource_metrics_proto = request_proto.resource_metrics(0);
+  EXPECT_EQ("resource_schema_url", resource_metrics_proto.schema_url());
+
+  ASSERT_EQ(1, resource_metrics_proto.scope_metrics_size());
+  const auto &scope_metrics_proto = resource_metrics_proto.scope_metrics(0);
+  EXPECT_EQ("scope_schema_url", scope_metrics_proto.schema_url());
+
+  ASSERT_EQ(1, scope_metrics_proto.metrics_size());
+  const auto &metric_proto = scope_metrics_proto.metrics(0);
+  EXPECT_EQ("Counter", metric_proto.name());
+
+  const auto &scope_proto = scope_metrics_proto.scope();
+  EXPECT_EQ("scope_name", scope_proto.name());
+  EXPECT_EQ("scope_version", scope_proto.version());
+
+  ASSERT_EQ(1, scope_proto.attributes_size());
+  const auto &scope_attributes_proto = scope_proto.attributes(0);
+  EXPECT_EQ("scope_key", scope_attributes_proto.key());
+  EXPECT_EQ("scope_value", scope_attributes_proto.value().string_value());
 }
 
 }  // namespace otlp

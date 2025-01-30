@@ -8,6 +8,7 @@
 
 #include "opentelemetry/nostd/span.h"
 #include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/logs/recordable.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -15,8 +16,6 @@ namespace sdk
 {
 namespace logs
 {
-class Recordable;
-
 /**
  * LogRecordExporter defines the interface that log exporters must implement.
  */
@@ -52,7 +51,7 @@ public:
    * Force flush the log records pushed into this log exporter.
    */
   virtual bool ForceFlush(
-      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept = 0;
 
   /**
    * Marks the exporter as ShutDown and cleans up any resources as required.
@@ -62,7 +61,7 @@ public:
    * @return true if the exporter shutdown succeeded, false otherwise
    */
   virtual bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept = 0;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept = 0;
 };
 }  // namespace logs
 }  // namespace sdk

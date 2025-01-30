@@ -8,6 +8,7 @@
 
 #include "opentelemetry/nostd/span.h"
 #include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/trace/recordable.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -15,7 +16,6 @@ namespace sdk
 {
 namespace trace
 {
-class Recordable;
 
 /**
  * SpanExporter defines the interface that protocol-specific span exporters must
@@ -48,12 +48,12 @@ public:
 
   /**
    * Export all spans that have been exported.
-   * @param timeout an optional timeout, the default timeout of 0 means that no
+   * @param timeout an optional timeout, the default timeout means that no
    * timeout is applied.
    * @return return true when all data are exported, and false when timeout
    */
   virtual bool ForceFlush(
-      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept = 0;
 
   /**
    * Shut down the exporter.
@@ -61,7 +61,7 @@ public:
    * @return return the status of the operation.
    */
   virtual bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept = 0;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept = 0;
 };
 }  // namespace trace
 }  // namespace sdk

@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/context/context.h"
 #include "opentelemetry/nostd/function_ref.h"
 #include "opentelemetry/nostd/span.h"
 #include "opentelemetry/sdk/metrics/data/metric_data.h"
@@ -19,11 +20,6 @@ namespace common
 {
 class KeyValueIterable;
 }  // namespace common
-
-namespace context
-{
-class Context;
-}  // namespace context
 
 namespace sdk
 {
@@ -94,7 +90,7 @@ public:
                opentelemetry::common::SystemTimestamp /* collection_ts */,
                nostd::function_ref<bool(MetricData)> callback) noexcept override
   {
-    MetricData metric_data;
+    MetricData metric_data{};
     return callback(std::move(metric_data));
   }
 };
