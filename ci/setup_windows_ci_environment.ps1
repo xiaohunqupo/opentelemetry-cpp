@@ -10,13 +10,19 @@ $VCPKG_DIR = (Get-Item -Path ".\").FullName
 ./bootstrap-vcpkg.bat
 ./vcpkg integrate install
 
-# Patched Google Benchmark can be shared between vs2017 and vs2019 compilers
-./vcpkg "--vcpkg-root=$VCPKG_DIR" install --overlay-ports="$PSScriptRoot\ports" benchmark:x64-windows
+# Google Benchmark
+./vcpkg "--vcpkg-root=$VCPKG_DIR" install benchmark:x64-windows
 
 # Google Test
 ./vcpkg "--vcpkg-root=$VCPKG_DIR" install gtest:x64-windows
 
 # nlohmann-json
 ./vcpkg "--vcpkg-root=$VCPKG_DIR" install nlohmann-json:x64-windows
+
+# grpc
+./vcpkg "--vcpkg-root=$VCPKG_DIR" install grpc:x64-windows
+
+# curl
+./vcpkg "--vcpkg-root=$VCPKG_DIR" install curl:x64-windows
 
 Pop-Location

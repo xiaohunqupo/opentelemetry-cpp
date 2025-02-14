@@ -12,11 +12,13 @@
 
 #if !defined(OPENTELEMETRY_HAVE_STD_STRING_VIEW)
 #  include <algorithm>
-#  include <cstddef>
 #  include <cstring>
+#  include <functional>
 #  include <ostream>
 #  include <stdexcept>
 #  include <string>
+#  include <type_traits>
+#  include <utility>
 
 #  include "opentelemetry/version.h"
 
@@ -43,7 +45,7 @@ public:
 
   string_view(const char *str) noexcept : length_(std::strlen(str)), data_(str) {}
 
-  string_view(const std::basic_string<char> &str) noexcept
+  string_view(const std::basic_string<char> &str OPENTELEMETRY_ATTRIBUTE_LIFETIME_BOUND) noexcept
       : length_(str.length()), data_(str.c_str())
   {}
 

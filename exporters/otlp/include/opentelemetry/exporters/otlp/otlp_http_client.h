@@ -3,14 +3,6 @@
 
 #pragma once
 
-#include "opentelemetry/common/spin_lock_mutex.h"
-#include "opentelemetry/ext/http/client/http_client.h"
-#include "opentelemetry/nostd/variant.h"
-#include "opentelemetry/sdk/common/exporter_utils.h"
-
-#include "opentelemetry/exporters/otlp/otlp_environment.h"
-#include "opentelemetry/exporters/otlp/otlp_http.h"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -21,6 +13,15 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
+#include "opentelemetry/exporters/otlp/otlp_environment.h"
+#include "opentelemetry/exporters/otlp/otlp_http.h"
+#include "opentelemetry/ext/http/client/http_client.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/common/thread_instrumentation.h"
+#include "opentelemetry/version.h"
 
 // forward declare google::protobuf::Message
 namespace google
@@ -49,17 +50,18 @@ struct OtlpHttpClientOptions
 {
   std::string url;
 
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
   /** SSL options. */
   ext::http::client::HttpSslOptions ssl_options;
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
 
-  // By default, post json data
-  HttpRequestContentType content_type = HttpRequestContentType::kJson;
+  // By default, post binary data
+  HttpRequestContentType content_type = HttpRequestContentType::kBinary;
 
   // If convert bytes into hex. By default, we will convert all bytes but id into base64
   // This option is ignored if content_type is not kJson
   JsonBytesMappingKind json_bytes_mapping = JsonBytesMappingKind::kHexId;
+
+  // By default, do not compress data
+  std::string compression = "none";
 
   // If using the json name of protobuf field to set the key of json. By default, we will use the
   // field name just like proto files.
@@ -73,6 +75,9 @@ struct OtlpHttpClientOptions
   // Additional HTTP headers
   OtlpHeaders http_headers;
 
+  // Retry policy for select failure codes
+  ext::http::client::RetryPolicy retry_policy;
+
   // Concurrent requests
   std::size_t max_concurrent_requests = 64;
 
@@ -82,33 +87,38 @@ struct OtlpHttpClientOptions
   // User agent
   std::string user_agent;
 
-  inline OtlpHttpClientOptions(nostd::string_view input_url,
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
-                               bool input_ssl_insecure_skip_verify,
-                               nostd::string_view input_ssl_ca_cert_path,
-                               nostd::string_view input_ssl_ca_cert_string,
-                               nostd::string_view input_ssl_client_key_path,
-                               nostd::string_view input_ssl_client_key_string,
-                               nostd::string_view input_ssl_client_cert_path,
-                               nostd::string_view input_ssl_client_cert_string,
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
-#ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
-                               nostd::string_view input_ssl_min_tls,
-                               nostd::string_view input_ssl_max_tls,
-                               nostd::string_view input_ssl_cipher,
-                               nostd::string_view input_ssl_cipher_suite,
-#endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
-                               HttpRequestContentType input_content_type,
-                               JsonBytesMappingKind input_json_bytes_mapping,
-                               bool input_use_json_name,
-                               bool input_console_debug,
-                               std::chrono::system_clock::duration input_timeout,
-                               const OtlpHeaders &input_http_headers,
-                               std::size_t input_concurrent_sessions         = 64,
-                               std::size_t input_max_requests_per_connection = 8,
-                               nostd::string_view input_user_agent = GetOtlpDefaultUserAgent())
+  std::shared_ptr<sdk::common::ThreadInstrumentation> thread_instrumentation =
+      std::shared_ptr<sdk::common::ThreadInstrumentation>(nullptr);
+
+  inline OtlpHttpClientOptions(
+      nostd::string_view input_url,
+      bool input_ssl_insecure_skip_verify,
+      nostd::string_view input_ssl_ca_cert_path,
+      nostd::string_view input_ssl_ca_cert_string,
+      nostd::string_view input_ssl_client_key_path,
+      nostd::string_view input_ssl_client_key_string,
+      nostd::string_view input_ssl_client_cert_path,
+      nostd::string_view input_ssl_client_cert_string,
+      nostd::string_view input_ssl_min_tls,
+      nostd::string_view input_ssl_max_tls,
+      nostd::string_view input_ssl_cipher,
+      nostd::string_view input_ssl_cipher_suite,
+      HttpRequestContentType input_content_type,
+      JsonBytesMappingKind input_json_bytes_mapping,
+      nostd::string_view input_compression,
+      bool input_use_json_name,
+      bool input_console_debug,
+      std::chrono::system_clock::duration input_timeout,
+      const OtlpHeaders &input_http_headers,
+      std::uint32_t input_retry_policy_max_attempts,
+      std::chrono::duration<float> input_retry_policy_initial_backoff,
+      std::chrono::duration<float> input_retry_policy_max_backoff,
+      float input_retry_policy_backoff_multiplier,
+      const std::shared_ptr<sdk::common::ThreadInstrumentation> &input_thread_instrumentation,
+      std::size_t input_concurrent_sessions         = 64,
+      std::size_t input_max_requests_per_connection = 8,
+      nostd::string_view input_user_agent           = GetOtlpDefaultUserAgent())
       : url(input_url),
-#ifdef ENABLE_OTLP_HTTP_SSL_PREVIEW
         ssl_options(input_url,
                     input_ssl_insecure_skip_verify,
                     input_ssl_ca_cert_path,
@@ -116,25 +126,24 @@ struct OtlpHttpClientOptions
                     input_ssl_client_key_path,
                     input_ssl_client_key_string,
                     input_ssl_client_cert_path,
-                    input_ssl_client_cert_string
-#  ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
-                    ,
+                    input_ssl_client_cert_string,
                     input_ssl_min_tls,
                     input_ssl_max_tls,
                     input_ssl_cipher,
-                    input_ssl_cipher_suite
-#  endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
-                    ),
-#endif /* ENABLE_OTLP_HTTP_SSL_PREVIEW */
+                    input_ssl_cipher_suite),
         content_type(input_content_type),
         json_bytes_mapping(input_json_bytes_mapping),
+        compression(input_compression),
         use_json_name(input_use_json_name),
         console_debug(input_console_debug),
         timeout(input_timeout),
         http_headers(input_http_headers),
+        retry_policy{input_retry_policy_max_attempts, input_retry_policy_initial_backoff,
+                     input_retry_policy_max_backoff, input_retry_policy_backoff_multiplier},
         max_concurrent_requests(input_concurrent_sessions),
         max_requests_per_connection(input_max_requests_per_connection),
-        user_agent(input_user_agent)
+        user_agent(input_user_agent),
+        thread_instrumentation(input_thread_instrumentation)
   {}
 };
 
@@ -283,7 +292,7 @@ private:
                  std::shared_ptr<ext::http::client::HttpClient> http_client);
 
   // Stores if this HTTP client had its Shutdown() method called
-  bool is_shutdown_;
+  std::atomic<bool> is_shutdown_;
 
   // The configuration options associated with this HTTP client.
   const OtlpHttpClientOptions options_;
@@ -304,6 +313,8 @@ private:
   // Condition variable and mutex to control the concurrency count of running sessions
   std::mutex session_waker_lock_;
   std::condition_variable session_waker_;
+  std::atomic<size_t> start_session_counter_;
+  std::atomic<size_t> finished_session_counter_;
 };
 }  // namespace otlp
 }  // namespace exporter

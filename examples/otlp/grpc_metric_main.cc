@@ -10,6 +10,7 @@
 #include "opentelemetry/sdk/metrics/meter_context_factory.h"
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/metrics/meter_provider_factory.h"
+#include "opentelemetry/sdk/metrics/provider.h"
 
 #include <memory>
 #include <thread>
@@ -51,13 +52,13 @@ void InitMetrics()
   auto u_provider = metric_sdk::MeterProviderFactory::Create(std::move(context));
   std::shared_ptr<opentelemetry::metrics::MeterProvider> provider(std::move(u_provider));
 
-  metrics_api::Provider::SetMeterProvider(provider);
+  metric_sdk::Provider::SetMeterProvider(provider);
 }
 
 void CleanupMetrics()
 {
   std::shared_ptr<metrics_api::MeterProvider> none;
-  metrics_api::Provider::SetMeterProvider(none);
+  metric_sdk::Provider::SetMeterProvider(none);
 }
 }  // namespace
 
@@ -93,16 +94,29 @@ int main(int argc, char *argv[])
   {
     foo_library::histogram_example(name);
   }
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+  else if (example_type == "gauge")
+  {
+    foo_library::gauge_example(name);
+  }
+#endif
   else
   {
     std::thread counter_example{&foo_library::counter_example, name};
     std::thread observable_counter_example{&foo_library::observable_counter_example, name};
     std::thread histogram_example{&foo_library::histogram_example, name};
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+    std::thread gauge_example{&foo_library::gauge_example, name};
+#endif
 
     counter_example.join();
     observable_counter_example.join();
     histogram_example.join();
+#if OPENTELEMETRY_ABI_VERSION_NO >= 2
+    gauge_example.join();
+#endif
   }
 
   CleanupMetrics();
+  return 0;
 }

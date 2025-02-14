@@ -1,12 +1,12 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/trace/trace_flags.h"
-
-#include <cstring>
+#include <gtest/gtest.h>
+#include <stdint.h>
 #include <string>
 
-#include <gtest/gtest.h>
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/trace/trace_flags.h"
 
 namespace
 {

@@ -10,9 +10,6 @@
 #include "opentelemetry/version.h"
 
 #if defined(_MSC_VER)
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
 #  define _WINSOCKAPI_  // stops including winsock.h
 #  include <windows.h>
 #elif defined(__i386__) || defined(__x86_64__)
@@ -56,10 +53,9 @@ class SpinLockMutex
 {
 public:
   SpinLockMutex() noexcept {}
-  ~SpinLockMutex() noexcept            = default;
-  SpinLockMutex(const SpinLockMutex &) = delete;
+  ~SpinLockMutex() noexcept                       = default;
+  SpinLockMutex(const SpinLockMutex &)            = delete;
   SpinLockMutex &operator=(const SpinLockMutex &) = delete;
-  SpinLockMutex &operator=(const SpinLockMutex &) volatile = delete;
 
   static inline void fast_yield() noexcept
   {
@@ -72,8 +68,10 @@ public:
 #  else
     __builtin_ia32_pause();
 #  endif
-#elif defined(__arm__)
-    __asm__ volatile("yield" ::: "memory");
+#elif defined(__armel__) || defined(__ARMEL__)
+    asm volatile("nop" ::: "memory");
+#elif defined(__arm__) || defined(__aarch64__)  // arm big endian / arm64
+    __asm__ __volatile__("yield" ::: "memory");
 #else
     // TODO: Issue PAGE/YIELD on other architectures.
 #endif

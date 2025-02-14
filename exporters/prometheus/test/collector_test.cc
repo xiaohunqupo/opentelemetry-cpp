@@ -1,45 +1,49 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gtest/gtest.h>
+#include <prometheus/metric_family.h>
+#include <stddef.h>
+#include <chrono>
+#include <thread>
+#include <vector>
+
 #include "opentelemetry/exporters/prometheus/collector.h"
 #include "opentelemetry/metrics/meter_provider.h"
-#include "opentelemetry/version.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/metrics/metric_reader.h"
 #include "prometheus_test_helper.h"
 
-#include <gtest/gtest.h>
-#include <future>
-#include <map>
-#include <thread>
-
 using opentelemetry::exporter::metrics::PrometheusCollector;
+using opentelemetry::sdk::metrics::MetricProducer;
 using opentelemetry::sdk::metrics::ResourceMetrics;
 namespace metric_api      = opentelemetry::metrics;
 namespace metric_sdk      = opentelemetry::sdk::metrics;
 namespace metric_exporter = opentelemetry::exporter::metrics;
 
-class MockMetricProducer : public opentelemetry::sdk::metrics::MetricProducer
+class MockMetricProducer : public MetricProducer
 {
   TestDataPoints test_data_points_;
 
 public:
   MockMetricProducer(std::chrono::microseconds sleep_ms = std::chrono::microseconds::zero())
-      : sleep_ms_{sleep_ms}, data_sent_size_(0)
+      : sleep_ms_{sleep_ms}
   {}
 
-  bool Collect(nostd::function_ref<bool(ResourceMetrics &)> callback) noexcept override
+  MetricProducer::Result Produce() noexcept override
   {
     std::this_thread::sleep_for(sleep_ms_);
     data_sent_size_++;
     ResourceMetrics data = test_data_points_.CreateSumPointData();
-    callback(data);
-    return true;
+    return {data, MetricProducer::Status::kSuccess};
   }
 
   size_t GetDataCount() { return data_sent_size_; }
 
 private:
   std::chrono::microseconds sleep_ms_;
-  size_t data_sent_size_;
+  size_t data_sent_size_{0};
 };
 
 class MockMetricReader : public opentelemetry::sdk::metrics::MetricReader
@@ -70,15 +74,13 @@ private:
  */
 TEST(PrometheusCollector, BasicTests)
 {
-  MockMetricReader *reader     = new MockMetricReader();
-  MockMetricProducer *producer = new MockMetricProducer();
-  reader->SetMetricProducer(producer);
-  PrometheusCollector collector(reader, true);
+  MockMetricReader reader;
+  MockMetricProducer producer;
+  reader.SetMetricProducer(&producer);
+  PrometheusCollector collector(&reader, true, false);
   auto data = collector.Collect();
 
   // Collection size should be the same as the size
   // of the records collection produced by MetricProducer.
   ASSERT_EQ(data.size(), 2);
-  delete reader;
-  delete producer;
 }

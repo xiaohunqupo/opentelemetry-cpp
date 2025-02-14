@@ -6,22 +6,18 @@
 #include <memory>
 #include <vector>
 
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/sdk/trace/id_generator.h"
+#include "opentelemetry/sdk/trace/processor.h"
+#include "opentelemetry/sdk/trace/sampler.h"
+#include "opentelemetry/sdk/trace/tracer_context.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace sdk
 {
-namespace resource
-{
-class Resource;
-}  // namespace resource
-
 namespace trace
 {
-class IdGenerator;
-class Sampler;
-class SpanProcessor;
-class TracerContext;
 
 /**
  * Factory class for TracerContext.
@@ -58,6 +54,16 @@ public:
       const opentelemetry::sdk::resource::Resource &resource,
       std::unique_ptr<Sampler> sampler,
       std::unique_ptr<IdGenerator> id_generator);
+
+  /**
+   * Create a TracerContext.
+   */
+  static std::unique_ptr<TracerContext> Create(
+      std::vector<std::unique_ptr<SpanProcessor>> &&processors,
+      const opentelemetry::sdk::resource::Resource &resource,
+      std::unique_ptr<Sampler> sampler,
+      std::unique_ptr<IdGenerator> id_generator,
+      std::unique_ptr<instrumentationscope::ScopeConfigurator<TracerConfig>> tracer_configurator);
 };
 
 }  // namespace trace

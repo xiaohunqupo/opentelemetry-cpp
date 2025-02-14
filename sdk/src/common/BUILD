@@ -6,7 +6,6 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "random",
     srcs = [
-        "core.cc",
         "random.cc",
     ],
     hdrs = [
@@ -31,6 +30,18 @@ cc_library(
         "//api",
         "//sdk:headers",
         "//sdk/src/common/platform:fork",
+    ],
+)
+
+cc_library(
+    name = "disabled",
+    srcs = [
+        "disabled.cc",
+    ],
+    include_prefix = "src/common",
+    deps = [
+        "//api",
+        "//sdk:headers",
     ],
 )
 

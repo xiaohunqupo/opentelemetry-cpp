@@ -1,9 +1,12 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/common/timestamp.h"
-
 #include <gtest/gtest.h>
+#include <stdlib.h>
+#include <chrono>
+#include <string>
+
+#include "opentelemetry/common/timestamp.h"
 
 using opentelemetry::common::SteadyTimestamp;
 using opentelemetry::common::SystemTimestamp;

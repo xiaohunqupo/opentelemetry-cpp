@@ -4,10 +4,8 @@
 #pragma once
 
 #include "nlohmann/json.hpp"
-#include "opentelemetry/common/spin_lock_mutex.h"
 #include "opentelemetry/ext/http/client/http_client_factory.h"
 #include "opentelemetry/nostd/shared_ptr.h"
-#include "opentelemetry/nostd/type_traits.h"
 #include "opentelemetry/sdk/logs/exporter.h"
 #include "opentelemetry/sdk/logs/recordable.h"
 
@@ -28,6 +26,8 @@ namespace logs
  */
 struct ElasticsearchExporterOptions
 {
+  using HttpHeaders = std::multimap<std::string, std::string>;
+
   // Configuration options to establish Elasticsearch connection
   std::string host_;
   int port_;
@@ -39,6 +39,9 @@ struct ElasticsearchExporterOptions
   // Whether to print the status of the exporter in the console
   bool console_debug_;
 
+  /** Additional HTTP headers. */
+  HttpHeaders http_headers_;
+
   /**
    * Constructor for the ElasticsearchExporterOptions. By default, the endpoint is
    * localhost:9200/logs with a timeout of 30 seconds and disabled console debugging
@@ -49,16 +52,18 @@ struct ElasticsearchExporterOptions
    * from elasticsearch
    * @param console_debug If true, print the status of the exporter methods in the console
    */
-  ElasticsearchExporterOptions(std::string host     = "localhost",
-                               int port             = 9200,
-                               std::string index    = "logs",
-                               int response_timeout = 30,
-                               bool console_debug   = false)
+  ElasticsearchExporterOptions(const std::string &host         = "localhost",
+                               int port                        = 9200,
+                               const std::string &index        = "logs",
+                               int response_timeout            = 30,
+                               bool console_debug              = false,
+                               const HttpHeaders &http_headers = {})
       : host_{host},
         port_{port},
         index_{index},
         response_timeout_{response_timeout},
-        console_debug_{console_debug}
+        console_debug_{console_debug},
+        http_headers_{http_headers}
   {}
 };
 
@@ -100,25 +105,24 @@ public:
    * @return return true when all data are exported, and false when timeout
    */
   bool ForceFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Shutdown this exporter.
    * @param timeout The maximum time to wait for the shutdown method to return
    */
   bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
 private:
   // Stores if this exporter had its Shutdown() method called
-  bool is_shutdown_ = false;
+  std::atomic<bool> is_shutdown_{false};
 
   // Configuration options for the exporter
   ElasticsearchExporterOptions options_;
 
   // Object that stores the HTTP sessions that have been created
   std::shared_ptr<ext::http::client::HttpClient> http_client_;
-  mutable opentelemetry::common::SpinLockMutex lock_;
   bool isShutdown() const noexcept;
 
 #ifdef ENABLE_ASYNC_EXPORT

@@ -21,12 +21,15 @@ if(TARGET c-ares::cares)
 endif()
 
 # curl targets
-if(TARGET CURL::libcurl)
-  project_build_tools_patch_default_imported_config(CURL::libcurl)
+if(TARGET CURL::libcurl
+   OR TARGET CURL::libcurl_static
+   OR TARGET CURL::libcurl_shared)
+  project_build_tools_patch_default_imported_config(
+    CURL::libcurl CURL::libcurl_static CURL::libcurl_shared)
 endif()
 
 # abseil targets
-if(WITH_ABSEIL)
+if(WITH_ABSEIL OR WITH_OTLP_GRPC)
   project_build_tools_patch_default_imported_config(
     absl::bad_variant_access
     absl::raw_logging_internal

@@ -6,8 +6,10 @@
 #include <chrono>
 #include <memory>
 
+#include "opentelemetry/nostd/function_ref.h"
 #include "opentelemetry/sdk/metrics/export/metric_producer.h"
 #include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/metrics/metric_reader.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -51,11 +53,11 @@ public:
    *
    * @return a status of completion of method.
    */
-  bool Collect(nostd::function_ref<bool(ResourceMetrics &metric_data)> callback) noexcept override;
+  Result Produce() noexcept override;
 
-  bool ForceFlush(std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept;
+  bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
-  bool Shutdown(std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept;
+  bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
 private:
   MeterContext *meter_context_;

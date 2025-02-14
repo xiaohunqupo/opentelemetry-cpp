@@ -1,17 +1,27 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/metrics/meter_provider.h"
+#include <chrono>
+#include <mutex>
+#include <utility>
+
+#include "opentelemetry/common/key_value_iterable.h"
 #include "opentelemetry/metrics/meter.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/sdk/common/global_log_handler.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
 #include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_context.h"
+#include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/metrics/metric_reader.h"
-
-#include "opentelemetry/sdk/common/global_log_handler.h"
-#include "opentelemetry/sdk_config.h"
+#include "opentelemetry/sdk/metrics/view/instrument_selector.h"
+#include "opentelemetry/sdk/metrics/view/meter_selector.h"
+#include "opentelemetry/sdk/metrics/view/view.h"
+#include "opentelemetry/sdk/metrics/view/view_registry.h"
+#include "opentelemetry/sdk/resource/resource.h"
 #include "opentelemetry/version.h"
-
-#include <vector>
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace sdk
@@ -26,7 +36,7 @@ MeterProvider::MeterProvider(std::unique_ptr<MeterContext> context) noexcept
 {}
 
 MeterProvider::MeterProvider(std::unique_ptr<ViewRegistry> views,
-                             sdk::resource::Resource resource) noexcept
+                             const sdk::resource::Resource &resource) noexcept
     : context_(std::make_shared<MeterContext>(std::move(views), resource))
 {
   OTEL_INTERNAL_LOG_DEBUG("[MeterProvider] MeterProvider created.");
@@ -60,7 +70,7 @@ nostd::shared_ptr<metrics_api::Meter> MeterProvider::GetMeter(
   for (auto &meter : context_->GetMeters())
   {
     auto meter_lib = meter->GetInstrumentationScope();
-    if (meter_lib->equal(name, version, schema_url))
+    if (meter_lib->equal(name, version, schema_url, attributes))
     {
       return nostd::shared_ptr<metrics_api::Meter>{meter};
     }
@@ -99,23 +109,31 @@ const resource::Resource &MeterProvider::GetResource() const noexcept
 
 void MeterProvider::AddMetricReader(std::shared_ptr<MetricReader> reader) noexcept
 {
-  return context_->AddMetricReader(reader);
+  context_->AddMetricReader(std::move(reader));
 }
 
 void MeterProvider::AddView(std::unique_ptr<InstrumentSelector> instrument_selector,
                             std::unique_ptr<MeterSelector> meter_selector,
                             std::unique_ptr<View> view) noexcept
 {
-  return context_->AddView(std::move(instrument_selector), std::move(meter_selector),
-                           std::move(view));
+  context_->AddView(std::move(instrument_selector), std::move(meter_selector), std::move(view));
 }
+
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+
+void MeterProvider::SetExemplarFilter(metrics::ExemplarFilterType exemplar_filter_type) noexcept
+{
+  context_->SetExemplarFilter(exemplar_filter_type);
+}
+
+#endif  // ENABLE_METRICS_EXEMPLAR_PREVIEW
 
 /**
  * Shutdown the meter provider.
  */
-bool MeterProvider::Shutdown() noexcept
+bool MeterProvider::Shutdown(std::chrono::microseconds timeout) noexcept
 {
-  return context_->Shutdown();
+  return context_->Shutdown(timeout);
 }
 
 /**

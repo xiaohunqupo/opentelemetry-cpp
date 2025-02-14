@@ -1,30 +1,48 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include <array>
+#include <gtest/gtest.h>
+#include <stdint.h>
+#include <chrono>
+#include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/logs/logger_provider.h"
 #include "opentelemetry/logs/provider.h"
+#include "opentelemetry/logs/severity.h"
 #include "opentelemetry/nostd/shared_ptr.h"
 #include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/logs/event_logger_provider.h"
 #include "opentelemetry/sdk/logs/event_logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/exporter.h"
 #include "opentelemetry/sdk/logs/logger.h"
+#include "opentelemetry/sdk/logs/logger_context.h"
 #include "opentelemetry/sdk/logs/logger_provider.h"
+#include "opentelemetry/sdk/logs/processor.h"
+#include "opentelemetry/sdk/logs/provider.h"
 #include "opentelemetry/sdk/logs/recordable.h"
 #include "opentelemetry/sdk/logs/simple_log_record_processor.h"
-
-#include <gtest/gtest.h>
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
 
 using namespace opentelemetry::sdk::logs;
 namespace logs_api = opentelemetry::logs;
+namespace logs_sdk = opentelemetry::sdk::logs;
 namespace nostd    = opentelemetry::nostd;
 
 TEST(LoggerProviderSDK, PushToAPI)
 {
   auto lp =
       nostd::shared_ptr<logs_api::LoggerProvider>(new opentelemetry::sdk::logs::LoggerProvider());
-  logs_api::Provider::SetLoggerProvider(lp);
+  logs_sdk::Provider::SetLoggerProvider(lp);
 
   // Check that the loggerprovider was correctly pushed into the API
   ASSERT_EQ(lp, logs_api::Provider::GetLoggerProvider());
@@ -109,6 +127,62 @@ TEST(LoggerProviderSDK, EventLoggerProviderFactory)
   auto logger1 = lp->GetLogger("logger1", "opentelelemtry_library", "", schema_url);
 
   auto event_logger = elp->CreateEventLogger(logger1, "otel-cpp.test");
+}
+
+TEST(LoggerProviderSDK, LoggerEqualityCheck)
+{
+  auto lp = std::shared_ptr<logs_api::LoggerProvider>(new LoggerProvider());
+  nostd::string_view schema_url{"https://opentelemetry.io/schemas/1.11.0"};
+
+  auto logger1 = lp->GetLogger("logger1", "opentelelemtry_library", "", schema_url);
+  auto logger2 = lp->GetLogger("logger1", "opentelelemtry_library", "", schema_url);
+  EXPECT_EQ(logger1, logger2);
+
+  auto logger3         = lp->GetLogger("logger3");
+  auto another_logger3 = lp->GetLogger("logger3");
+  EXPECT_EQ(logger3, another_logger3);
+
+  auto logger4         = lp->GetLogger("logger4", "opentelelemtry_library", "1.0.0", schema_url);
+  auto another_logger4 = lp->GetLogger("logger4", "opentelelemtry_library", "1.0.0", schema_url);
+  EXPECT_EQ(logger4, another_logger4);
+
+  auto logger5 =
+      lp->GetLogger("logger5", "opentelelemtry_library", "1.0.0", schema_url, {{"key", "value"}});
+  auto another_logger5 =
+      lp->GetLogger("logger5", "opentelelemtry_library", "1.0.0", schema_url, {{"key", "value"}});
+  EXPECT_EQ(logger5, another_logger5);
+}
+
+TEST(LoggerProviderSDK, GetLoggerInequalityCheck)
+{
+  auto lp               = std::shared_ptr<logs_api::LoggerProvider>(new LoggerProvider());
+  auto logger_library_1 = lp->GetLogger("logger1", "library_1");
+  auto logger_library_2 = lp->GetLogger("logger1", "library_2");
+  auto logger_version_1 = lp->GetLogger("logger1", "library_1", "1.0.0");
+  auto logger_version_2 = lp->GetLogger("logger1", "library_1", "2.0.0");
+  auto logger_url_1     = lp->GetLogger("logger1", "library_1", "1.0.0", "url_1");
+  auto logger_url_2     = lp->GetLogger("logger1", "library_1", "1.0.0", "url_2");
+  auto logger_attribute_1 =
+      lp->GetLogger("logger1", "library_1", "1.0.0", "url_1", {{"key", "one"}});
+  auto logger_attribute_2 =
+      lp->GetLogger("logger1", "library_1", "1.0.0", "url_1", {{"key", "two"}});
+
+  // different scope names should return distinct loggers
+  EXPECT_NE(logger_library_1, logger_library_2);
+
+  // different scope versions should return distinct loggers
+  EXPECT_NE(logger_version_1, logger_library_1);
+  EXPECT_NE(logger_version_1, logger_version_2);
+
+  // different scope schema urls should return distinct loggers
+  EXPECT_NE(logger_url_1, logger_library_1);
+  EXPECT_NE(logger_url_1, logger_version_1);
+  EXPECT_NE(logger_url_1, logger_url_2);
+
+  // different scope attributes should return distinct loggers
+  EXPECT_NE(logger_attribute_1, logger_library_1);
+  EXPECT_NE(logger_attribute_1, logger_url_1);
+  EXPECT_NE(logger_attribute_1, logger_attribute_2);
 }
 
 class DummyLogRecordable final : public opentelemetry::sdk::logs::Recordable

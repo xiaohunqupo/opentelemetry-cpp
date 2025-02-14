@@ -3,18 +3,14 @@
 
 #pragma once
 
-#include "opentelemetry/common/kv_properties.h"
-#include "opentelemetry/nostd/string_view.h"
-
-#include "opentelemetry/sdk/common/attribute_utils.h"
-#include "opentelemetry/sdk/common/env_variables.h"
-#include "opentelemetry/sdk/version/version.h"
-
+#include <ctype.h>
 #include <algorithm>
 #include <chrono>
 #include <map>
 #include <string>
-#include <unordered_set>
+
+#include "opentelemetry/sdk/version/version.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -40,6 +36,10 @@ inline std::string GetOtlpDefaultGrpcEndpoint()
 std::string GetOtlpDefaultHttpTracesEndpoint();
 std::string GetOtlpDefaultHttpMetricsEndpoint();
 std::string GetOtlpDefaultHttpLogsEndpoint();
+
+std::string GetOtlpDefaultHttpTracesProtocol();
+std::string GetOtlpDefaultHttpMetricsProtocol();
+std::string GetOtlpDefaultHttpLogsProtocol();
 
 // Compatibility with OTELCPP 1.8.2
 inline std::string GetOtlpDefaultHttpEndpoint()
@@ -99,7 +99,6 @@ std::string GetOtlpDefaultTracesSslClientCertificateString();
 std::string GetOtlpDefaultMetricsSslClientCertificateString();
 std::string GetOtlpDefaultLogsSslClientCertificateString();
 
-#ifdef ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW
 std::string GetOtlpDefaultTracesSslTlsMinVersion();
 std::string GetOtlpDefaultMetricsSslTlsMinVersion();
 std::string GetOtlpDefaultLogsSslTlsMinVersion();
@@ -108,7 +107,7 @@ std::string GetOtlpDefaultTracesSslTlsMaxVersion();
 std::string GetOtlpDefaultMetricsSslTlsMaxVersion();
 std::string GetOtlpDefaultLogsSslTlsMaxVersion();
 
-// For TLS 1.0, 1.1, 1.2
+// For TLS 1.2
 std::string GetOtlpDefaultTracesSslTlsCipher();
 std::string GetOtlpDefaultMetricsSslTlsCipher();
 std::string GetOtlpDefaultLogsSslTlsCipher();
@@ -117,7 +116,6 @@ std::string GetOtlpDefaultLogsSslTlsCipher();
 std::string GetOtlpDefaultTracesSslTlsCipherSuite();
 std::string GetOtlpDefaultMetricsSslTlsCipherSuite();
 std::string GetOtlpDefaultLogsSslTlsCipherSuite();
-#endif /* ENABLE_OTLP_HTTP_SSL_TLS_PREVIEW */
 
 std::chrono::system_clock::duration GetOtlpDefaultTracesTimeout();
 std::chrono::system_clock::duration GetOtlpDefaultMetricsTimeout();
@@ -149,6 +147,26 @@ inline OtlpHeaders GetOtlpDefaultHeaders()
 {
   return GetOtlpDefaultTracesHeaders();
 }
+
+std::string GetOtlpDefaultTracesCompression();
+std::string GetOtlpDefaultMetricsCompression();
+std::string GetOtlpDefaultLogsCompression();
+
+std::uint32_t GetOtlpDefaultTracesRetryMaxAttempts();
+std::uint32_t GetOtlpDefaultMetricsRetryMaxAttempts();
+std::uint32_t GetOtlpDefaultLogsRetryMaxAttempts();
+
+std::chrono::duration<float> GetOtlpDefaultTracesRetryInitialBackoff();
+std::chrono::duration<float> GetOtlpDefaultMetricsRetryInitialBackoff();
+std::chrono::duration<float> GetOtlpDefaultLogsRetryInitialBackoff();
+
+std::chrono::duration<float> GetOtlpDefaultTracesRetryMaxBackoff();
+std::chrono::duration<float> GetOtlpDefaultMetricsRetryMaxBackoff();
+std::chrono::duration<float> GetOtlpDefaultLogsRetryMaxBackoff();
+
+float GetOtlpDefaultTracesRetryBackoffMultiplier();
+float GetOtlpDefaultMetricsRetryBackoffMultiplier();
+float GetOtlpDefaultLogsRetryBackoffMultiplier();
 
 }  // namespace otlp
 }  // namespace exporter

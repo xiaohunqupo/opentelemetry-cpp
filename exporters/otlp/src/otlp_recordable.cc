@@ -1,10 +1,36 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/exporters/otlp/otlp_recordable.h"
+#include <stdint.h>
+#include <chrono>
+#include <string>
 
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/common/timestamp.h"
 #include "opentelemetry/exporters/otlp/otlp_populate_attribute_utils.h"
-#include "opentelemetry/exporters/otlp/otlp_recordable_utils.h"
+#include "opentelemetry/exporters/otlp/otlp_recordable.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/trace/trace_state.h"
+#include "opentelemetry/version.h"
+
+// clang-format off
+#include "opentelemetry/exporters/otlp/protobuf_include_prefix.h" // IWYU pragma: keep
+#include "opentelemetry/proto/common/v1/common.pb.h"
+#include "opentelemetry/proto/resource/v1/resource.pb.h"
+#include "opentelemetry/proto/trace/v1/trace.pb.h"
+#include "opentelemetry/exporters/otlp/protobuf_include_suffix.h" // IWYU pragma: keep
+// clang-format on
 
 namespace nostd = opentelemetry::nostd;
 
@@ -81,6 +107,7 @@ proto::common::v1::InstrumentationScope OtlpRecordable::GetProtoInstrumentationS
   {
     instrumentation_scope.set_name(instrumentation_scope_->GetName());
     instrumentation_scope.set_version(instrumentation_scope_->GetVersion());
+    OtlpPopulateAttributeUtils::PopulateAttribute(&instrumentation_scope, *instrumentation_scope_);
   }
   return instrumentation_scope;
 }
@@ -138,6 +165,13 @@ void OtlpRecordable::SetStatus(trace::StatusCode code, nostd::string_view descri
 void OtlpRecordable::SetName(nostd::string_view name) noexcept
 {
   span_.set_name(name.data(), name.size());
+}
+
+void OtlpRecordable::SetTraceFlags(opentelemetry::trace::TraceFlags flags) noexcept
+{
+  uint32_t all_flags = flags.flags() & opentelemetry::proto::trace::v1::SPAN_FLAGS_TRACE_FLAGS_MASK;
+
+  span_.set_flags(all_flags);
 }
 
 void OtlpRecordable::SetSpanKind(trace::SpanKind span_kind) noexcept

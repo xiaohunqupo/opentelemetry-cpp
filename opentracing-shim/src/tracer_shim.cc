@@ -3,15 +3,39 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "opentelemetry/opentracingshim/tracer_shim.h"
-#include "opentelemetry/opentracingshim/propagation.h"
-#include "opentelemetry/opentracingshim/shim_utils.h"
-#include "opentelemetry/opentracingshim/span_shim.h"
+#include <algorithm>
+#include <iosfwd>
+#include <new>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#include "opentracing/expected/expected.hpp"
+#include "opentracing/ext/tags.h"
+#include "opentracing/propagation.h"
+#include "opentracing/span.h"
+#include "opentracing/string_view.h"
+#include "opentracing/tracer.h"
+#include "opentracing/value.h"
 
 #include "opentelemetry/baggage/baggage_context.h"
 #include "opentelemetry/context/propagation/global_propagator.h"
+#include "opentelemetry/context/propagation/text_map_propagator.h"
+#include "opentelemetry/context/runtime_context.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/opentracingshim/propagation.h"
+#include "opentelemetry/opentracingshim/shim_utils.h"
+#include "opentelemetry/opentracingshim/span_context_shim.h"
+#include "opentelemetry/opentracingshim/span_shim.h"
+#include "opentelemetry/opentracingshim/tracer_shim.h"
 #include "opentelemetry/trace/context.h"
-#include "opentracing/ext/tags.h"
+#include "opentelemetry/trace/default_span.h"
+#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/tracer.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace opentracingshim
@@ -24,12 +48,13 @@ std::unique_ptr<opentracing::Span> TracerShim::StartSpanWithOptions(
   if (is_closed_)
     return nullptr;
 
-  const auto &opts       = utils::makeOptionsShim(options);
-  const auto &links      = utils::makeIterableLinks(options);
-  const auto &attributes = utils::makeIterableTags(options);
-  const auto &baggage    = utils::makeBaggage(options);
-  auto span              = tracer_->StartSpan(operation_name.data(), attributes, links, opts);
-  auto span_shim         = new (std::nothrow) SpanShim(*this, span, baggage);
+  const auto &opts         = utils::makeOptionsShim(options);
+  const auto &links        = utils::makeIterableLinks(options);
+  const auto &attributes   = utils::makeIterableTags(options);
+  const auto &baggage      = utils::makeBaggage(options);
+  auto operation_name_view = nostd::string_view{operation_name.data(), operation_name.size()};
+  auto span                = tracer_->StartSpan(operation_name_view, attributes, links, opts);
+  auto span_shim           = new (std::nothrow) SpanShim(*this, span, baggage);
 
   // If an initial set of tags is specified and the OpenTracing error tag
   // is included after the OpenTelemetry Span was created.
@@ -124,12 +149,21 @@ opentracing::expected<void> TracerShim::injectImpl(const opentracing::SpanContex
   if (auto context_shim = SpanContextShim::extractFrom(&sc))
   {
     auto current_context = opentelemetry::context::RuntimeContext::GetCurrent();
-    // It MUST inject any non-empty Baggage even amidst no valid SpanContext.
-    const auto &context =
-        opentelemetry::baggage::SetBaggage(current_context, context_shim->baggage());
+
+    // Inject dummy span to provide SpanContext information
+    auto span_context = opentelemetry::trace::SpanContext(
+        context_shim->context().trace_id(), context_shim->context().span_id(),
+        context_shim->context().trace_flags(), false);
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Span> sp{
+        new opentelemetry::trace::DefaultSpan(span_context)};
+    auto context_with_span = opentelemetry::trace::SetSpan(current_context, sp);
+
+    // Inject any non-empty Baggage
+    const auto &context_with_span_baggage =
+        opentelemetry::baggage::SetBaggage(context_with_span, context_shim->baggage());
 
     CarrierWriterShim carrier{writer};
-    propagator->Inject(carrier, context);
+    propagator->Inject(carrier, context_with_span_baggage);
     return opentracing::make_expected();
   }
 

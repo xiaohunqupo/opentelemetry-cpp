@@ -1,11 +1,14 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/baggage/baggage.h"
-#include "opentelemetry/nostd/string_view.h"
-
 #include <benchmark/benchmark.h>
-#include <cstdint>
+#include <stddef.h>
+#include <string>
+
+#include "opentelemetry/baggage/baggage.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/string_view.h"
 
 using namespace opentelemetry::baggage;
 namespace nostd = opentelemetry::nostd;
@@ -22,7 +25,7 @@ std::string header_with_custom_entries(size_t num_entries)
   {
     std::string key   = "ADecentlyLargekey" + std::to_string(i);
     std::string value = "ADecentlyLargeValue" + std::to_string(i);
-    header += key + "=" + value;
+    header.append(key).append("=").append(value);
     if (i != num_entries - 1)
     {
       header += ",";

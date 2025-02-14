@@ -11,14 +11,18 @@
 #include <vector>
 
 #include "opentelemetry/common/attribute_value.h"
-#include "opentelemetry/common/macros.h"
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/common/key_value_iterable_view.h"
 #include "opentelemetry/common/timestamp.h"
 #include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/sdk/common/attribute_utils.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #include "opentelemetry/sdk/trace/recordable.h"
-#include "opentelemetry/trace/span.h"
+#include "opentelemetry/trace/span_context.h"
 #include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/trace_flags.h"
 #include "opentelemetry/trace/trace_id.h"
 #include "opentelemetry/version.h"
 
@@ -55,7 +59,8 @@ public:
    * Get the attributes for this event
    * @return the attributes for this event
    */
-  const std::unordered_map<std::string, common::OwnedAttributeValue> &GetAttributes() const noexcept
+  const std::unordered_map<std::string, opentelemetry::sdk::common::OwnedAttributeValue> &
+  GetAttributes() const noexcept
   {
     return attribute_map_.GetAttributes();
   }
@@ -63,7 +68,7 @@ public:
 private:
   std::string name_;
   opentelemetry::common::SystemTimestamp timestamp_;
-  common::AttributeMap attribute_map_;
+  opentelemetry::sdk::common::AttributeMap attribute_map_;
 };
 
 /**
@@ -81,7 +86,8 @@ public:
    * Get the attributes for this link
    * @return the attributes for this link
    */
-  const std::unordered_map<std::string, common::OwnedAttributeValue> &GetAttributes() const noexcept
+  const std::unordered_map<std::string, opentelemetry::sdk::common::OwnedAttributeValue> &
+  GetAttributes() const noexcept
   {
     return attribute_map_.GetAttributes();
   }
@@ -94,7 +100,7 @@ public:
 
 private:
   opentelemetry::trace::SpanContext span_context_;
-  common::AttributeMap attribute_map_;
+  opentelemetry::sdk::common::AttributeMap attribute_map_;
 };
 
 /**
@@ -133,6 +139,12 @@ public:
    * @return the name for this span
    */
   opentelemetry::nostd::string_view GetName() const noexcept { return name_; }
+
+  /**
+   * Get the trace flags for this span
+   * @return the trace flags for this span
+   */
+  opentelemetry::trace::TraceFlags GetFlags() const noexcept { return flags_; }
 
   /**
    * Get the kind of this span
@@ -210,7 +222,8 @@ public:
    * Get the attributes for this span
    * @return the attributes for this span
    */
-  const std::unordered_map<std::string, common::OwnedAttributeValue> &GetAttributes() const noexcept
+  const std::unordered_map<std::string, opentelemetry::sdk::common::OwnedAttributeValue> &
+  GetAttributes() const noexcept
   {
     return attribute_map_.GetAttributes();
   }
@@ -244,7 +257,7 @@ public:
                 opentelemetry::common::SystemTimestamp timestamp =
                     opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now()),
                 const opentelemetry::common::KeyValueIterable &attributes =
-                    opentelemetry::common::KeyValueIterableView<std::map<std::string, int>>(
+                    opentelemetry::common::KeyValueIterableView<std::map<std::string, int32_t>>(
                         {})) noexcept override
   {
     SpanDataEvent event(std::string(name), timestamp, attributes);
@@ -269,6 +282,8 @@ public:
   {
     name_ = std::string(name.data(), name.length());
   }
+
+  void SetTraceFlags(opentelemetry::trace::TraceFlags flags) noexcept override { flags_ = flags; }
 
   void SetSpanKind(opentelemetry::trace::SpanKind span_kind) noexcept override
   {
@@ -300,9 +315,10 @@ private:
   std::string name_;
   opentelemetry::trace::StatusCode status_code_{opentelemetry::trace::StatusCode::kUnset};
   std::string status_desc_;
-  common::AttributeMap attribute_map_;
+  opentelemetry::sdk::common::AttributeMap attribute_map_;
   std::vector<SpanDataEvent> events_;
   std::vector<SpanDataLink> links_;
+  opentelemetry::trace::TraceFlags flags_;
   opentelemetry::trace::SpanKind span_kind_{opentelemetry::trace::SpanKind::kInternal};
   const opentelemetry::sdk::resource::Resource *resource_;
   const InstrumentationScope *instrumentation_scope_;

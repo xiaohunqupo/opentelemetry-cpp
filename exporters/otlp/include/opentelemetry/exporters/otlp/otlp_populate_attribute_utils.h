@@ -3,17 +3,38 @@
 
 #pragma once
 
-// clang-format off
-#include "opentelemetry/exporters/otlp/protobuf_include_prefix.h"
-#include "opentelemetry/proto/resource/v1/resource.pb.h"
-#include "opentelemetry/exporters/otlp/protobuf_include_suffix.h"
-// clang-format on
-
 #include "opentelemetry/common/attribute_value.h"
 #include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/sdk/common/attribute_utils.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #include "opentelemetry/version.h"
+
+namespace opentelemetry
+{
+namespace proto
+{
+
+namespace common
+{
+namespace v1
+{
+class AnyValue;
+class KeyValue;
+class InstrumentationScope;
+}  // namespace v1
+}  // namespace common
+
+namespace resource
+{
+namespace v1
+{
+class Resource;
+}
+}  // namespace resource
+
+}  // namespace proto
+}  // namespace opentelemetry
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -29,6 +50,10 @@ class OtlpPopulateAttributeUtils
 public:
   static void PopulateAttribute(opentelemetry::proto::resource::v1::Resource *proto,
                                 const opentelemetry::sdk::resource::Resource &resource) noexcept;
+
+  static void PopulateAttribute(opentelemetry::proto::common::v1::InstrumentationScope *proto,
+                                const opentelemetry::sdk::instrumentationscope::InstrumentationScope
+                                    &instrumentation_scope) noexcept;
 
   static void PopulateAnyValue(opentelemetry::proto::common::v1::AnyValue *proto_value,
                                const opentelemetry::common::AttributeValue &value) noexcept;

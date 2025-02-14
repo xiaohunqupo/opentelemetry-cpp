@@ -6,8 +6,10 @@
 #include <chrono>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+
 #include "opentelemetry/nostd/function_ref.h"
 #include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/version.h"
@@ -95,6 +97,12 @@ enum class SessionState
   Cancelled            // (manually) cancelled
 };
 
+enum class Compression
+{
+  kNone,
+  kGzip
+};
+
 using Byte       = uint8_t;
 using StatusCode = uint16_t;
 using Body       = std::vector<Byte>;
@@ -110,7 +118,6 @@ struct cmp_ic
 };
 using Headers = std::multimap<std::string, std::string, cmp_ic>;
 
-#ifdef ENABLE_HTTP_SSL_PREVIEW
 struct HttpSslOptions
 {
   HttpSslOptions() {}
@@ -122,15 +129,11 @@ struct HttpSslOptions
                  nostd::string_view input_ssl_client_key_path,
                  nostd::string_view input_ssl_client_key_string,
                  nostd::string_view input_ssl_client_cert_path,
-                 nostd::string_view input_ssl_client_cert_string
-#  ifdef ENABLE_HTTP_SSL_TLS_PREVIEW
-                 ,
+                 nostd::string_view input_ssl_client_cert_string,
                  nostd::string_view input_ssl_min_tls,
                  nostd::string_view input_ssl_max_tls,
                  nostd::string_view input_ssl_cipher,
-                 nostd::string_view input_ssl_cipher_suite
-#  endif /* ENABLE_HTTP_SSL_TLS_PREVIEW */
-                 )
+                 nostd::string_view input_ssl_cipher_suite)
       : use_ssl(false),
         ssl_insecure_skip_verify(input_ssl_insecure_skip_verify),
         ssl_ca_cert_path(input_ssl_ca_cert_path),
@@ -138,15 +141,11 @@ struct HttpSslOptions
         ssl_client_key_path(input_ssl_client_key_path),
         ssl_client_key_string(input_ssl_client_key_string),
         ssl_client_cert_path(input_ssl_client_cert_path),
-        ssl_client_cert_string(input_ssl_client_cert_string)
-
-#  ifdef ENABLE_HTTP_SSL_TLS_PREVIEW
-        ,
+        ssl_client_cert_string(input_ssl_client_cert_string),
         ssl_min_tls(input_ssl_min_tls),
         ssl_max_tls(input_ssl_max_tls),
         ssl_cipher(input_ssl_cipher),
         ssl_cipher_suite(input_ssl_cipher_suite)
-#  endif /* ENABLE_HTTP_SSL_TLS_PREVIEW */
   {
     /* Use SSL if url starts with "https:" */
     if (strncmp(url.data(), "https:", 6) == 0)
@@ -192,13 +191,10 @@ struct HttpSslOptions
   */
   std::string ssl_client_cert_string{};
 
-#  ifdef ENABLE_HTTP_SSL_TLS_PREVIEW
   /**
     Minimum SSL version to use.
     Valid values are:
-    - empty (no minimum version required)
-    - "1.0" (TLSv1.0)
-    - "1.1" (TLSv1.1)
+    - empty (defaults to TLSv1.2)
     - "1.2" (TLSv1.2)
     - "1.3" (TLSv1.3)
   */
@@ -208,8 +204,6 @@ struct HttpSslOptions
     Maximum SSL version to use.
     Valid values are:
     - empty (no maximum version required)
-    - "1.0" (TLSv1.0)
-    - "1.1" (TLSv1.1)
     - "1.2" (TLSv1.2)
     - "1.3" (TLSv1.3)
   */
@@ -217,7 +211,7 @@ struct HttpSslOptions
 
   /**
     TLS Cipher.
-    This is for TLS 1.0, 1.1 and 1.2.
+    This is for TLS 1.2.
     The list is delimited by colons (":").
     Cipher names depends on the underlying CURL implementation.
   */
@@ -230,9 +224,29 @@ struct HttpSslOptions
     Cipher names depends on the underlying CURL implementation.
   */
   std::string ssl_cipher_suite{};
-#  endif /* ENABLE_HTTP_SSL_TLS_PREVIEW */
 };
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
+
+using SecondsDecimal = std::chrono::duration<float, std::ratio<1>>;
+
+struct RetryPolicy
+{
+  RetryPolicy() = default;
+
+  RetryPolicy(std::uint32_t input_max_attempts,
+              SecondsDecimal input_initial_backoff,
+              SecondsDecimal input_max_backoff,
+              float input_backoff_multiplier)
+      : max_attempts(input_max_attempts),
+        initial_backoff(input_initial_backoff),
+        max_backoff(input_max_backoff),
+        backoff_multiplier(input_backoff_multiplier)
+  {}
+
+  std::uint32_t max_attempts{};
+  SecondsDecimal initial_backoff{};
+  SecondsDecimal max_backoff{};
+  float backoff_multiplier{};
+};
 
 class Request
 {
@@ -241,9 +255,7 @@ public:
 
   virtual void SetUri(nostd::string_view uri) noexcept = 0;
 
-#ifdef ENABLE_HTTP_SSL_PREVIEW
   virtual void SetSslOptions(const HttpSslOptions &options) noexcept = 0;
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
 
   virtual void SetBody(Body &body) noexcept = 0;
 
@@ -252,6 +264,12 @@ public:
   virtual void ReplaceHeader(nostd::string_view name, nostd::string_view value) noexcept = 0;
 
   virtual void SetTimeoutMs(std::chrono::milliseconds timeout_ms) noexcept = 0;
+
+  virtual void SetCompression(const Compression &compression) noexcept = 0;
+
+  virtual void EnableLogging(bool is_log_enabled) noexcept = 0;
+
+  virtual void SetRetryPolicy(const RetryPolicy &retry_policy) noexcept = 0;
 
   virtual ~Request() = default;
 };
@@ -366,40 +384,33 @@ public:
 class HttpClientSync
 {
 public:
-  Result GetNoSsl(const nostd::string_view &url, const Headers &headers = {{}}) noexcept
+  Result GetNoSsl(const nostd::string_view &url,
+                  const Headers &headers         = {{}},
+                  const Compression &compression = Compression::kNone) noexcept
   {
-#ifdef ENABLE_HTTP_SSL_PREVIEW
     static const HttpSslOptions no_ssl;
-    return Get(url, no_ssl, headers);
-#else
-    return Get(url, headers);
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
+    return Get(url, no_ssl, headers, compression);
   }
 
   virtual Result PostNoSsl(const nostd::string_view &url,
                            const Body &body,
-                           const Headers &headers = {{"content-type", "application/json"}}) noexcept
+                           const Headers &headers         = {{"content-type", "application/json"}},
+                           const Compression &compression = Compression::kNone) noexcept
   {
-#ifdef ENABLE_HTTP_SSL_PREVIEW
     static const HttpSslOptions no_ssl;
-    return Post(url, no_ssl, body, headers);
-#else
-    return Post(url, body, headers);
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
+    return Post(url, no_ssl, body, headers, compression);
   }
 
   virtual Result Get(const nostd::string_view &url,
-#ifdef ENABLE_HTTP_SSL_PREVIEW
                      const HttpSslOptions &ssl_options,
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
-                     const Headers & = {{}}) noexcept = 0;
+                     const Headers                & = {{}},
+                     const Compression &compression = Compression::kNone) noexcept = 0;
 
   virtual Result Post(const nostd::string_view &url,
-#ifdef ENABLE_HTTP_SSL_PREVIEW
                       const HttpSslOptions &ssl_options,
-#endif /* ENABLE_HTTP_SSL_PREVIEW */
                       const Body &body,
-                      const Headers & = {{"content-type", "application/json"}}) noexcept = 0;
+                      const Headers                & = {{"content-type", "application/json"}},
+                      const Compression &compression = Compression::kNone) noexcept = 0;
 
   virtual ~HttpClientSync() = default;
 };

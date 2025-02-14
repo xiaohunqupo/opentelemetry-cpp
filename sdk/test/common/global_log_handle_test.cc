@@ -1,11 +1,12 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/common/global_log_handler.h"
-
 #include <gtest/gtest.h>
-
 #include <cstring>
+
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/sdk/common/attribute_utils.h"
+#include "opentelemetry/sdk/common/global_log_handler.h"
 
 class CustomLogHandler : public opentelemetry::sdk::common::internal_log::LogHandler
 {
@@ -56,6 +57,14 @@ TEST(GlobalLogHandleTest, CustomLogHandler)
 
   opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogLevel(
       opentelemetry::sdk::common::internal_log::LogLevel::Debug);
+  OTEL_INTERNAL_LOG_ERROR("Error message");
+  OTEL_INTERNAL_LOG_DEBUG("Debug message. Headers:", attributes);
+  OTEL_INTERNAL_LOG_INFO("Info message");
+  OTEL_INTERNAL_LOG_WARN("Warning message");
+  EXPECT_EQ(before_count + 5, static_cast<CustomLogHandler *>(custom_log_handler.get())->count);
+
+  opentelemetry::sdk::common::internal_log::GlobalLogHandler::SetLogLevel(
+      opentelemetry::sdk::common::internal_log::LogLevel::None);
   OTEL_INTERNAL_LOG_ERROR("Error message");
   OTEL_INTERNAL_LOG_DEBUG("Debug message. Headers:", attributes);
   OTEL_INTERNAL_LOG_INFO("Info message");

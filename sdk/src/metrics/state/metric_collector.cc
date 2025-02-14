@@ -1,12 +1,23 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/metrics/state/metric_collector.h"
+#include <algorithm>
+#include <chrono>
+#include <memory>
+#include <ostream>
+#include <utility>
+#include <vector>
+
+#include "opentelemetry/nostd/function_ref.h"
 #include "opentelemetry/sdk/common/global_log_handler.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
 #include "opentelemetry/sdk/metrics/meter.h"
 #include "opentelemetry/sdk/metrics/meter_context.h"
 #include "opentelemetry/sdk/metrics/metric_reader.h"
-#include "opentelemetry/sdk_config.h"
+#include "opentelemetry/sdk/metrics/state/metric_collector.h"
+#include "opentelemetry/sdk/resource/resource.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -14,10 +25,11 @@ namespace sdk
 {
 namespace metrics
 {
+using opentelemetry::sdk::resource::Resource;
 
 MetricCollector::MetricCollector(opentelemetry::sdk::metrics::MeterContext *context,
                                  std::shared_ptr<MetricReader> metric_reader)
-    : meter_context_{context}, metric_reader_{metric_reader}
+    : meter_context_{context}, metric_reader_{std::move(metric_reader)}
 {
   metric_reader_->SetMetricProducer(this);
 }
@@ -25,20 +37,30 @@ MetricCollector::MetricCollector(opentelemetry::sdk::metrics::MeterContext *cont
 AggregationTemporality MetricCollector::GetAggregationTemporality(
     InstrumentType instrument_type) noexcept
 {
-  return metric_reader_->GetAggregationTemporality(instrument_type);
+  auto aggregation_temporality = metric_reader_->GetAggregationTemporality(instrument_type);
+  if (aggregation_temporality == AggregationTemporality::kDelta &&
+      instrument_type == InstrumentType::kGauge)
+  {
+    OTEL_INTERNAL_LOG_ERROR(
+        "[MetricCollector::GetAggregationTemporality] - Error getting aggregation temporality."
+        << "Delta temporality for Synchronous Gauge is currently not supported, using cumulative "
+           "temporality");
+
+    return AggregationTemporality::kCumulative;
+  }
+  return aggregation_temporality;
 }
 
-bool MetricCollector::Collect(
-    nostd::function_ref<bool(ResourceMetrics &metric_data)> callback) noexcept
+MetricProducer::Result MetricCollector::Produce() noexcept
 {
   if (!meter_context_)
   {
     OTEL_INTERNAL_LOG_ERROR("[MetricCollector::Collect] - Error during collecting."
                             << "The metric context is invalid");
-    return false;
+    return {{}, MetricProducer::Status::kFailure};
   }
   ResourceMetrics resource_metrics;
-  meter_context_->ForEachMeter([&](std::shared_ptr<Meter> meter) noexcept {
+  meter_context_->ForEachMeter([&](const std::shared_ptr<Meter> &meter) noexcept {
     auto collection_ts = std::chrono::system_clock::now();
     auto metric_data   = meter->Collect(this, collection_ts);
     if (!metric_data.empty())
@@ -51,8 +73,7 @@ bool MetricCollector::Collect(
     return true;
   });
   resource_metrics.resource_ = &meter_context_->GetResource();
-  callback(resource_metrics);
-  return true;
+  return {resource_metrics, MetricProducer::Status::kSuccess};
 }
 
 bool MetricCollector::ForceFlush(std::chrono::microseconds timeout) noexcept

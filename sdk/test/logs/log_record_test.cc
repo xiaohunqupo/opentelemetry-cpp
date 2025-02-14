@@ -1,20 +1,32 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gtest/gtest.h>
 #include <stdint.h>
-#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <initializer_list>
 #include <string>
-#include <vector>
+#include <unordered_map>
+#include <utility>
 
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/logs/log_record.h"
 #include "opentelemetry/logs/logger.h"
-#include "opentelemetry/logs/provider.h"
+#include "opentelemetry/logs/logger_provider.h"
+#include "opentelemetry/logs/severity.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/unique_ptr.h"
 #include "opentelemetry/nostd/variant.h"
 #include "opentelemetry/sdk/logs/read_write_log_record.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/trace_flags.h"
 #include "opentelemetry/trace/trace_id.h"
-
-#include <gtest/gtest.h>
 
 using opentelemetry::sdk::logs::ReadWriteLogRecord;
 namespace trace_api = opentelemetry::trace;
@@ -52,7 +64,7 @@ TEST(ReadWriteLogRecord, SetAndGet)
   record.SetSeverity(logs_api::Severity::kInvalid);
   record.SetBody("Message");
   record.SetResource(resource);
-  record.SetAttribute("attr1", (int64_t)314159);
+  record.SetAttribute("attr1", static_cast<int64_t>(314159));
   record.SetTraceId(trace_id);
   record.SetSpanId(span_id);
   record.SetTraceFlags(trace_flags);
