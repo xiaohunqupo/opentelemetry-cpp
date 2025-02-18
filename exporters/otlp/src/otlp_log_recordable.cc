@@ -1,14 +1,26 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/common/macros.h"
-
 #include "opentelemetry/exporters/otlp/otlp_log_recordable.h"
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/timestamp.h"
 #include "opentelemetry/exporters/otlp/otlp_populate_attribute_utils.h"
-#include "opentelemetry/exporters/otlp/otlp_recordable_utils.h"
+#include "opentelemetry/logs/severity.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
 #include "opentelemetry/sdk/logs/readable_log_record.h"
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/version.h"
 
-namespace nostd = opentelemetry::nostd;
+// clang-format off
+#include "opentelemetry/exporters/otlp/protobuf_include_prefix.h" // IWYU pragma: keep
+#include "opentelemetry/proto/logs/v1/logs.pb.h"
+#include "opentelemetry/exporters/otlp/protobuf_include_suffix.h" // IWYU pragma: keep
+// clang-format on
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -18,7 +30,10 @@ namespace otlp
 
 const opentelemetry::sdk::resource::Resource &OtlpLogRecordable::GetResource() const noexcept
 {
-  OPENTELEMETRY_LIKELY_IF(nullptr != resource_) { return *resource_; }
+  if OPENTELEMETRY_LIKELY_CONDITION (nullptr != resource_)
+  {
+    return *resource_;
+  }
 
   return opentelemetry::sdk::logs::ReadableLogRecord::GetDefaultResource();
 }
@@ -26,7 +41,10 @@ const opentelemetry::sdk::resource::Resource &OtlpLogRecordable::GetResource() c
 const opentelemetry::sdk::instrumentationscope::InstrumentationScope &
 OtlpLogRecordable::GetInstrumentationScope() const noexcept
 {
-  OPENTELEMETRY_LIKELY_IF(nullptr != instrumentation_scope_) { return *instrumentation_scope_; }
+  if OPENTELEMETRY_LIKELY_CONDITION (nullptr != instrumentation_scope_)
+  {
+    return *instrumentation_scope_;
+  }
 
   return opentelemetry::sdk::logs::ReadableLogRecord::GetDefaultInstrumentationScope();
 }
@@ -179,6 +197,11 @@ void OtlpLogRecordable::SetBody(const opentelemetry::common::AttributeValue &mes
   OtlpPopulateAttributeUtils::PopulateAnyValue(proto_record_.mutable_body(), message);
 }
 
+void OtlpLogRecordable::SetEventId(int64_t /* id */, nostd::string_view event_name) noexcept
+{
+  proto_record_.set_event_name(event_name.data(), event_name.size());
+}
+
 void OtlpLogRecordable::SetTraceId(const opentelemetry::trace::TraceId &trace_id) noexcept
 {
   if (trace_id.IsValid())
@@ -210,7 +233,7 @@ void OtlpLogRecordable::SetTraceFlags(const opentelemetry::trace::TraceFlags &tr
   proto_record_.set_flags(trace_flags.flags());
 }
 
-void OtlpLogRecordable::SetAttribute(nostd::string_view key,
+void OtlpLogRecordable::SetAttribute(opentelemetry::nostd::string_view key,
                                      const opentelemetry::common::AttributeValue &value) noexcept
 {
   OtlpPopulateAttributeUtils::PopulateAttribute(proto_record_.add_attributes(), key, value);

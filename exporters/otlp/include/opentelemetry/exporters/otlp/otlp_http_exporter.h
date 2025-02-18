@@ -3,19 +3,17 @@
 
 #pragma once
 
-// We need include exporter.h first, which will include Windows.h with NOMINMAX on Windows
-#include "opentelemetry/sdk/trace/exporter.h"
+#include <chrono>
+#include <memory>
 
 #include "opentelemetry/exporters/otlp/otlp_http_client.h"
-
-#include "opentelemetry/exporters/otlp/otlp_environment.h"
-
 #include "opentelemetry/exporters/otlp/otlp_http_exporter_options.h"
-
-#include <chrono>
-#include <cstddef>
-#include <memory>
-#include <string>
+#include "opentelemetry/exporters/otlp/otlp_http_exporter_runtime_options.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/trace/exporter.h"
+#include "opentelemetry/sdk/trace/recordable.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -40,6 +38,12 @@ public:
   explicit OtlpHttpExporter(const OtlpHttpExporterOptions &options);
 
   /**
+   * Create an OtlpHttpExporter using the given options.
+   */
+  OtlpHttpExporter(const OtlpHttpExporterOptions &options,
+                   const OtlpHttpExporterRuntimeOptions &runtime_options);
+
+  /**
    * Create a span recordable.
    * @return a newly initialized Recordable object
    */
@@ -59,7 +63,7 @@ public:
    * @return return true when all data are exported, and false when timeout
    */
   bool ForceFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Shut down the exporter.
@@ -68,11 +72,13 @@ public:
    * @return return the status of this operation
    */
   bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
 private:
   // The configuration options associated with this exporter.
-  const OtlpHttpExporterOptions options_;
+  OtlpHttpExporterOptions options_;
+  // The runtime options associated with this exporter.
+  OtlpHttpExporterRuntimeOptions runtime_options_;
 
   // Object that stores the HTTP sessions that have been created
   std::unique_ptr<OtlpHttpClient> http_client_;

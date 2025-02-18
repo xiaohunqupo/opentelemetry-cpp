@@ -1,16 +1,29 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/metrics/state/temporal_metric_storage.h"
+#include <algorithm>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include "opentelemetry/common/spin_lock_mutex.h"
-#include "opentelemetry/metrics/meter.h"
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/attributemap_hash.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation_config.h"
 #include "opentelemetry/sdk/metrics/aggregation/default_aggregation.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/instruments.h"
 #include "opentelemetry/sdk/metrics/state/attributes_hashmap.h"
 #include "opentelemetry/sdk/metrics/state/metric_collector.h"
-
-#include <cstddef>
-#include <mutex>
-#include <utility>
+#include "opentelemetry/sdk/metrics/state/temporal_metric_storage.h"
+#include "opentelemetry/sdk/metrics/view/attributes_processor.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace sdk
@@ -21,7 +34,7 @@ namespace metrics
 TemporalMetricStorage::TemporalMetricStorage(InstrumentDescriptor instrument_descriptor,
                                              AggregationType aggregation_type,
                                              const AggregationConfig *aggregation_config)
-    : instrument_descriptor_(instrument_descriptor),
+    : instrument_descriptor_(std::move(instrument_descriptor)),
       aggregation_type_(aggregation_type),
       aggregation_config_(aggregation_config)
 {}
@@ -30,13 +43,42 @@ bool TemporalMetricStorage::buildMetrics(CollectorHandle *collector,
                                          nostd::span<std::shared_ptr<CollectorHandle>> collectors,
                                          opentelemetry::common::SystemTimestamp sdk_start_ts,
                                          opentelemetry::common::SystemTimestamp collection_ts,
-                                         std::shared_ptr<AttributesHashMap> delta_metrics,
+                                         const std::shared_ptr<AttributesHashMap> &delta_metrics,
                                          nostd::function_ref<bool(MetricData)> callback) noexcept
 {
   std::lock_guard<opentelemetry::common::SpinLockMutex> guard(lock_);
   opentelemetry::common::SystemTimestamp last_collection_ts = sdk_start_ts;
   AggregationTemporality aggregation_temporarily =
       collector->GetAggregationTemporality(instrument_descriptor_.type_);
+
+  // Fast path for single collector with delta temporality and counter, updown-counter, histogram
+  // This path doesn't need to aggregated-with/contribute-to the unreported_metric_, as there is
+  // no other reader configured to collect those data.
+  if (collectors.size() == 1 && aggregation_temporarily == AggregationTemporality::kDelta)
+  {
+    // If no metrics, early return
+    if (delta_metrics->Size() == 0)
+    {
+      return true;
+    }
+    // Create MetricData directly
+    MetricData metric_data;
+    metric_data.instrument_descriptor   = instrument_descriptor_;
+    metric_data.aggregation_temporality = AggregationTemporality::kDelta;
+    metric_data.start_ts                = sdk_start_ts;
+    metric_data.end_ts                  = collection_ts;
+
+    // Direct conversion of delta metrics to point data
+    delta_metrics->GetAllEnteries(
+        [&metric_data](const MetricAttributes &attributes, Aggregation &aggregation) {
+          PointDataAttributes point_data_attr;
+          point_data_attr.point_data = aggregation.ToPoint();
+          point_data_attr.attributes = attributes;
+          metric_data.point_data_attr_.emplace_back(std::move(point_data_attr));
+          return true;
+        });
+    return callback(metric_data);
+  }
 
   if (delta_metrics->Size())
   {

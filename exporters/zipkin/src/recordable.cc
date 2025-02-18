@@ -1,12 +1,32 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/exporters/zipkin/recordable.h"
-#include "opentelemetry/sdk/resource/resource.h"
-#include "opentelemetry/sdk/resource/semantic_conventions.h"
-
+#include <stdint.h>
+#include <chrono>
 #include <map>
 #include <string>
+#include <unordered_map>
+#include <utility>
+
+#include "nlohmann/json.hpp"
+
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/key_value_iterable.h"
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/exporters/zipkin/recordable.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/semconv/service_attributes.h"
+#include "opentelemetry/trace/span_context.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/span_metadata.h"
+#include "opentelemetry/trace/trace_flags.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -213,13 +233,19 @@ void Recordable::SetName(nostd::string_view name) noexcept
   span_["name"] = name.data();
 }
 
+void Recordable::SetTraceFlags(opentelemetry::trace::TraceFlags /* flags */) noexcept
+{
+  // TODO: Currently not supported by specs:
+  // https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/sdk_exporters/zipkin.md
+}
+
 void Recordable::SetResource(const sdk::resource::Resource &resource) noexcept
 {
   // only service.name attribute is supported by specs as of now.
   auto attributes = resource.GetAttributes();
-  if (attributes.find(SemanticConventions::kServiceName) != attributes.end())
+  if (attributes.find(semconv::service::kServiceName) != attributes.end())
   {
-    service_name_ = nostd::get<std::string>(attributes[SemanticConventions::kServiceName]);
+    service_name_ = nostd::get<std::string>(attributes[semconv::service::kServiceName]);
   }
 }
 

@@ -1,14 +1,16 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "src/trace/span.h"
-#include "src/common/random.h"
+#include <chrono>
+#include <utility>
 
-#include "opentelemetry/context/runtime_context.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/sdk/trace/processor.h"
 #include "opentelemetry/sdk/trace/recordable.h"
+#include "opentelemetry/trace/span_id.h"
 #include "opentelemetry/trace/span_metadata.h"
-#include "opentelemetry/trace/trace_flags.h"
 #include "opentelemetry/version.h"
+#include "src/trace/span.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace sdk
@@ -70,12 +72,14 @@ Span::Span(std::shared_ptr<Tracer> &&tracer,
                                                ? parent_span_context.span_id()
                                                : opentelemetry::trace::SpanId());
 
+  recordable_->SetTraceFlags(span_context_->trace_flags());
+
   attributes.ForEachKeyValue([&](nostd::string_view key, common::AttributeValue value) noexcept {
     recordable_->SetAttribute(key, value);
     return true;
   });
 
-  links.ForEachKeyValue([&](opentelemetry::trace::SpanContext span_context,
+  links.ForEachKeyValue([&](const opentelemetry::trace::SpanContext &span_context,
                             const common::KeyValueIterable &attributes) {
     recordable_->AddLink(span_context, attributes);
     return true;

@@ -2,13 +2,33 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
-
+#include <stdint.h>
 #include <chrono>
+#include <string>
+#include <utility>
 
+#include "opentelemetry/common/attribute_value.h"
+#include "opentelemetry/common/timestamp.h"
 #include "opentelemetry/exporters/otlp/otlp_log_recordable.h"
-#include "opentelemetry/sdk/logs/read_write_log_record.h"
+#include "opentelemetry/logs/severity.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/nostd/unique_ptr.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/logs/readable_log_record.h"
 #include "opentelemetry/sdk/resource/resource.h"
-#include "opentelemetry/sdk/resource/semantic_conventions.h"
+#include "opentelemetry/trace/span_id.h"
+#include "opentelemetry/trace/trace_id.h"
+#include "opentelemetry/version.h"
+
+// clang-format off
+#include "opentelemetry/exporters/otlp/protobuf_include_prefix.h" // IWYU pragma: keep
+// IWYU pragma: no_include "net/proto2/public/repeated_field.h"
+#include "opentelemetry/proto/common/v1/common.pb.h"
+#include "opentelemetry/proto/logs/v1/logs.pb.h"
+#include "opentelemetry/exporters/otlp/protobuf_include_suffix.h" // IWYU pragma: keep
+// clang-format on
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -152,6 +172,16 @@ TEST(OtlpLogRecordable, SetInstrumentationScope)
   rec.SetInstrumentationScope(*inst_lib);
 
   EXPECT_EQ(&rec.GetInstrumentationScope(), inst_lib.get());
+}
+
+TEST(OtlpLogRecordable, SetEventName)
+{
+  OtlpLogRecordable rec;
+
+  nostd::string_view event_name = "Test Event";
+  rec.SetEventId(0, event_name);
+
+  EXPECT_EQ(rec.log_record().event_name(), event_name);
 }
 
 /**

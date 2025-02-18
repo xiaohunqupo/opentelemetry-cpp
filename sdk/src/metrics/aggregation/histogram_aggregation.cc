@@ -1,15 +1,23 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/metrics/aggregation/histogram_aggregation.h"
-#include "opentelemetry/sdk/metrics/aggregation/aggregation_config.h"
-#include "opentelemetry/version.h"
-
+#include <stddef.h>
 #include <algorithm>
-#include <iomanip>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <utility>
+#include <vector>
+
+#include "opentelemetry/common/spin_lock_mutex.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation.h"
+#include "opentelemetry/sdk/metrics/aggregation/aggregation_config.h"
+#include "opentelemetry/sdk/metrics/aggregation/histogram_aggregation.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/data/point_data.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace sdk
@@ -20,7 +28,7 @@ namespace metrics
 LongHistogramAggregation::LongHistogramAggregation(const AggregationConfig *aggregation_config)
 {
   auto ac = static_cast<const HistogramAggregationConfig *>(aggregation_config);
-  if (ac && ac->boundaries_.size())
+  if (ac)
   {
     point_data_.boundaries_ = ac->boundaries_;
   }
@@ -35,11 +43,11 @@ LongHistogramAggregation::LongHistogramAggregation(const AggregationConfig *aggr
     record_min_max_ = ac->record_min_max_;
   }
   point_data_.counts_         = std::vector<uint64_t>(point_data_.boundaries_.size() + 1, 0);
-  point_data_.sum_            = (int64_t)0;
+  point_data_.sum_            = static_cast<int64_t>(0);
   point_data_.count_          = 0;
   point_data_.record_min_max_ = record_min_max_;
-  point_data_.min_            = std::numeric_limits<int64_t>::max();
-  point_data_.max_            = std::numeric_limits<int64_t>::min();
+  point_data_.min_            = (std::numeric_limits<int64_t>::max)();
+  point_data_.max_            = (std::numeric_limits<int64_t>::min)();
 }
 
 LongHistogramAggregation::LongHistogramAggregation(HistogramPointData &&data)
@@ -58,8 +66,8 @@ void LongHistogramAggregation::Aggregate(int64_t value,
   point_data_.sum_ = nostd::get<int64_t>(point_data_.sum_) + value;
   if (record_min_max_)
   {
-    point_data_.min_ = std::min(nostd::get<int64_t>(point_data_.min_), value);
-    point_data_.max_ = std::max(nostd::get<int64_t>(point_data_.max_), value);
+    point_data_.min_ = (std::min)(nostd::get<int64_t>(point_data_.min_), value);
+    point_data_.max_ = (std::max)(nostd::get<int64_t>(point_data_.max_), value);
   }
   size_t index = BucketBinarySearch(value, point_data_.boundaries_);
   point_data_.counts_[index] += 1;
@@ -101,7 +109,7 @@ PointType LongHistogramAggregation::ToPoint() const noexcept
 DoubleHistogramAggregation::DoubleHistogramAggregation(const AggregationConfig *aggregation_config)
 {
   auto ac = static_cast<const HistogramAggregationConfig *>(aggregation_config);
-  if (ac && ac->boundaries_.size())
+  if (ac)
   {
     point_data_.boundaries_ = ac->boundaries_;
   }
@@ -118,8 +126,8 @@ DoubleHistogramAggregation::DoubleHistogramAggregation(const AggregationConfig *
   point_data_.sum_            = 0.0;
   point_data_.count_          = 0;
   point_data_.record_min_max_ = record_min_max_;
-  point_data_.min_            = std::numeric_limits<double>::max();
-  point_data_.max_            = std::numeric_limits<double>::min();
+  point_data_.min_            = (std::numeric_limits<double>::max)();
+  point_data_.max_            = (std::numeric_limits<double>::min)();
 }
 
 DoubleHistogramAggregation::DoubleHistogramAggregation(HistogramPointData &&data)
@@ -138,8 +146,8 @@ void DoubleHistogramAggregation::Aggregate(double value,
   point_data_.sum_ = nostd::get<double>(point_data_.sum_) + value;
   if (record_min_max_)
   {
-    point_data_.min_ = std::min(nostd::get<double>(point_data_.min_), value);
-    point_data_.max_ = std::max(nostd::get<double>(point_data_.max_), value);
+    point_data_.min_ = (std::min)(nostd::get<double>(point_data_.min_), value);
+    point_data_.max_ = (std::max)(nostd::get<double>(point_data_.max_), value);
   }
   size_t index = BucketBinarySearch(value, point_data_.boundaries_);
   point_data_.counts_[index] += 1;

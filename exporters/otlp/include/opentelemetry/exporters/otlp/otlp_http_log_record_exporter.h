@@ -3,17 +3,17 @@
 
 #pragma once
 
-#include "opentelemetry/sdk/logs/exporter.h"
+#include <chrono>
+#include <memory>
 
 #include "opentelemetry/exporters/otlp/otlp_http_client.h"
-
-#include "opentelemetry/exporters/otlp/otlp_environment.h"
 #include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
-
-#include <chrono>
-#include <cstddef>
-#include <memory>
-#include <string>
+#include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_runtime_options.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/exporter_utils.h"
+#include "opentelemetry/sdk/logs/exporter.h"
+#include "opentelemetry/sdk/logs/recordable.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -39,6 +39,14 @@ public:
   OtlpHttpLogRecordExporter(const OtlpHttpLogRecordExporterOptions &options);
 
   /**
+   * Create an OtlpHttpLogRecordExporter with user specified options.
+   * @param options An object containing the user's configuration options.
+   * @param runtime_options An object containing the user's runtime options.
+   */
+  OtlpHttpLogRecordExporter(const OtlpHttpLogRecordExporterOptions &options,
+                            const OtlpHttpLogRecordExporterRuntimeOptions &runtime_options);
+
+  /**
    * Creates a recordable that stores the data in a JSON object
    */
   std::unique_ptr<opentelemetry::sdk::logs::Recordable> MakeRecordable() noexcept override;
@@ -58,18 +66,20 @@ public:
    * @return return true when all data are exported, and false when timeout
    */
   bool ForceFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Shutdown this exporter.
    * @param timeout The maximum time to wait for the shutdown method to return
    */
   bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
 private:
   // Configuration options for the exporter
-  const OtlpHttpLogRecordExporterOptions options_;
+  OtlpHttpLogRecordExporterOptions options_;
+  // Runtime options for the exporter
+  OtlpHttpLogRecordExporterRuntimeOptions runtime_options_;
 
   // Object that stores the HTTP sessions that have been created
   std::unique_ptr<OtlpHttpClient> http_client_;

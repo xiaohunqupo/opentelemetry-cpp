@@ -3,14 +3,13 @@
 
 #pragma once
 
-#include <memory>
+#include <prometheus/collectable.h>
+#include <prometheus/metric_family.h>
 #include <mutex>
 #include <vector>
 
-#include <prometheus/collectable.h>
-#include <prometheus/metric_family.h>
-#include "opentelemetry/exporters/prometheus/exporter_utils.h"
 #include "opentelemetry/sdk/metrics/metric_reader.h"
+#include "opentelemetry/version.h"
 
 namespace prometheus_client = ::prometheus;
 
@@ -31,7 +30,9 @@ public:
    * This constructor initializes the collection for metrics to export
    * in this class with default capacity
    */
-  explicit PrometheusCollector(sdk::metrics::MetricReader *reader, bool populate_target_info);
+  explicit PrometheusCollector(sdk::metrics::MetricReader *reader,
+                               bool populate_target_info,
+                               bool without_otel_scope);
 
   /**
    * Collects all metrics data from metricsToCollect collection.
@@ -43,6 +44,7 @@ public:
 private:
   sdk::metrics::MetricReader *reader_;
   bool populate_target_info_;
+  bool without_otel_scope_;
 
   /*
    * Lock when operating the metricsToCollect collection

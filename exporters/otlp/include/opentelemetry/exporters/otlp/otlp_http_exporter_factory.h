@@ -6,7 +6,9 @@
 #include <memory>
 
 #include "opentelemetry/exporters/otlp/otlp_http_exporter_options.h"
+#include "opentelemetry/exporters/otlp/otlp_http_exporter_runtime_options.h"
 #include "opentelemetry/sdk/trace/exporter.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace exporter
@@ -30,6 +32,13 @@ public:
    */
   static std::unique_ptr<opentelemetry::sdk::trace::SpanExporter> Create(
       const OtlpHttpExporterOptions &options);
+
+  /**
+   * Create an OtlpHttpExporter using the given options.
+   */
+  static std::unique_ptr<opentelemetry::sdk::trace::SpanExporter> Create(
+      const OtlpHttpExporterOptions &options,
+      const OtlpHttpExporterRuntimeOptions &runtime_options);
 };
 
 }  // namespace otlp

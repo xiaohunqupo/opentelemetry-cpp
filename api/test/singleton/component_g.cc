@@ -3,7 +3,9 @@
 
 #include "opentelemetry/nostd/shared_ptr.h"
 #include "opentelemetry/trace/provider.h"
-#include "opentelemetry/version.h"
+#include "opentelemetry/trace/scope.h"
+#include "opentelemetry/trace/tracer.h"
+#include "opentelemetry/trace/tracer_provider.h"
 
 namespace trace = opentelemetry::trace;
 namespace nostd = opentelemetry::nostd;
@@ -34,7 +36,8 @@ extern "C"
     __declspec(dllexport)
 #endif
 
-        void do_something_in_g()
+    void
+    do_something_in_g()
 {
   auto scoped_span = trace::Scope(get_tracer()->StartSpan("G::library"));
 

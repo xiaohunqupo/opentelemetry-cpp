@@ -34,7 +34,7 @@ class LoggerContext
 {
 public:
   explicit LoggerContext(std::vector<std::unique_ptr<LogRecordProcessor>> &&processors,
-                         opentelemetry::sdk::resource::Resource resource =
+                         const opentelemetry::sdk::resource::Resource &resource =
                              opentelemetry::sdk::resource::Resource::Create({})) noexcept;
 
   /**
@@ -70,7 +70,7 @@ public:
   /**
    * Shutdown the log processor associated with this tracer provider.
    */
-  bool Shutdown(std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept;
+  bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
 private:
   //  order of declaration is important here - resource object should be destroyed after processor.

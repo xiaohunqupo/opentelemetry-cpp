@@ -3,12 +3,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
-#include <memory>
 
-#include "opentelemetry/common/spin_lock_mutex.h"
 #include "opentelemetry/nostd/function_ref.h"
-#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
 #include "opentelemetry/sdk/metrics/instruments.h"
 #include "opentelemetry/version.h"
 
@@ -17,9 +16,6 @@ namespace sdk
 {
 namespace metrics
 {
-class MetricProducer;
-struct ResourceMetrics;
-
 /**
  * MetricReader defines the interface to collect metrics from SDK
  */
@@ -48,12 +44,12 @@ public:
   /**
    * Shutdown the metric reader.
    */
-  bool Shutdown(std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept;
+  bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
   /**
    * Force flush the metric read by the reader.
    */
-  bool ForceFlush(std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept;
+  bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept;
 
   /**
    * Return the status of Metric reader.
@@ -72,8 +68,7 @@ private:
 protected:
 private:
   MetricProducer *metric_producer_;
-  mutable opentelemetry::common::SpinLockMutex lock_;
-  bool shutdown_;
+  std::atomic<bool> shutdown_{false};
 };
 }  // namespace metrics
 }  // namespace sdk

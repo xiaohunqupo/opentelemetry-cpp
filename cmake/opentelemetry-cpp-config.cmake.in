@@ -7,7 +7,6 @@
 #
 # Find the native opentelemetry-cpp includes and library.
 #
-#
 # Result Variables
 # ^^^^^^^^^^^^^^^^
 #
@@ -41,12 +40,15 @@
 #   opentelemetry-cpp::otlp_http_exporter                - Imported target of opentelemetry-cpp::otlp_http_exporter
 #   opentelemetry-cpp::otlp_http_log_record_exporter     - Imported target of opentelemetry-cpp::otlp_http_log_record_exporter
 #   opentelemetry-cpp::otlp_http_metric_exporter         - Imported target of opentelemetry-cpp::otlp_http_metric_exporter
+#   opentelemetry-cpp::otlp_file_client                  - Imported target of opentelemetry-cpp::otlp_file_client
+#   opentelemetry-cpp::otlp_file_exporter                - Imported target of opentelemetry-cpp::otlp_file_exporter
+#   opentelemetry-cpp::otlp_file_log_record_exporter     - Imported target of opentelemetry-cpp::otlp_file_log_record_exporter
+#   opentelemetry-cpp::otlp_file_metric_exporter         - Imported target of opentelemetry-cpp::otlp_file_metric_exporter
 #   opentelemetry-cpp::ostream_log_record_exporter       - Imported target of opentelemetry-cpp::ostream_log_record_exporter
 #   opentelemetry-cpp::ostream_metrics_exporter          - Imported target of opentelemetry-cpp::ostream_metrics_exporter
 #   opentelemetry-cpp::ostream_span_exporter             - Imported target of opentelemetry-cpp::ostream_span_exporter
 #   opentelemetry-cpp::elasticsearch_log_record_exporter - Imported target of opentelemetry-cpp::elasticsearch_log_record_exporter
 #   opentelemetry-cpp::etw_exporter                      - Imported target of opentelemetry-cpp::etw_exporter
-#   opentelemetry-cpp::zpages                            - Imported target of opentelemetry-cpp::zpages
 #   opentelemetry-cpp::http_client_curl                  - Imported target of opentelemetry-cpp::http_client_curl
 #   opentelemetry-cpp::opentracing_shim                  - Imported target of opentelemetry-cpp::opentracing_shim
 #
@@ -67,7 +69,47 @@ set(OPENTELEMETRY_VERSION
 
 # ##############################################################################
 
-find_package(Threads)
+include(CMakeFindDependencyMacro)
+
+find_dependency(Threads)
+
+if(@WITH_ABSEIL@)
+  find_dependency(absl)
+endif()
+
+if(@WITH_OTLP_GRPC@)
+  find_dependency(gRPC)
+endif()
+
+if("@OpenTracing_FOUND@")
+  find_dependency(OpenTracing)
+endif()
+
+if("@prometheus-cpp_FOUND@")
+  find_dependency(prometheus-cpp)
+endif()
+
+if("@Protobuf_FOUND@" OR "@PROTOBUF_FOUND@")
+  find_dependency(Protobuf)
+endif()
+
+if (@WITH_HTTP_CLIENT_CURL@ AND NOT @BUILD_SHARED_LIBS@)
+  if("@CURL_FOUND@")
+    find_dependency(CURL)
+  endif()
+
+  if("@ZLIB_FOUND@")
+    find_dependency(ZLIB)
+  endif()
+endif()
+
+if(@WITH_ABSEIL@ OR @WITH_OTLP_GRPC@)
+  find_package(absl CONFIG)
+elseif(@WITH_OTLP_HTTP@ OR @WITH_OTLP_FILE@)
+  if("@Protobuf_VERSION@" VERSION_GREATER_EQUAL "3.22.0")
+    find_package(absl CONFIG)
+  endif()
+endif()
 
 set_and_check(OPENTELEMETRY_CPP_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
 set_and_check(OPENTELEMETRY_CPP_LIBRARY_DIRS "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
@@ -94,13 +136,16 @@ set(_OPENTELEMETRY_CPP_LIBRARIES_TEST_TARGETS
     otlp_http_exporter
     otlp_http_log_record_exporter
     otlp_http_metric_exporter
+    otlp_file_client
+    otlp_file_exporter
+    otlp_file_log_record_exporter
+    otlp_file_metric_exporter
     ostream_log_record_exporter
     ostream_metrics_exporter
     ostream_span_exporter
     prometheus_exporter
     elasticsearch_log_record_exporter
     etw_exporter
-    zpages
     http_client_curl
     opentracing_shim)
 foreach(_TEST_TARGET IN LISTS _OPENTELEMETRY_CPP_LIBRARIES_TEST_TARGETS)

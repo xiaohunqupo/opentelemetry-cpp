@@ -84,7 +84,7 @@
 // namespace absl {
 // OTABSL_NAMESPACE_BEGIN
 //
-// void Foo();  // absl::Foo().
+// void Foo();  // absl::OTABSL_OPTION_NAMESPACE_NAME::Foo().
 //
 // OTABSL_NAMESPACE_END
 // }  // namespace absl
@@ -94,40 +94,32 @@
 // not support forward declarations of its own types, nor does it support
 // user-provided specialization of Abseil templates.  Code that violates these
 // rules may be broken without warning.)
-#if !defined(OTABSL_OPTION_USE_INLINE_NAMESPACE) || \
-    !defined(OTABSL_OPTION_INLINE_NAMESPACE_NAME)
+#if !defined(OTABSL_OPTION_NAMESPACE_NAME)
 #error options.h is misconfigured.
 #endif
 
-// Check that OTABSL_OPTION_INLINE_NAMESPACE_NAME is neither "head" nor ""
-#if defined(__cplusplus) && OTABSL_OPTION_USE_INLINE_NAMESPACE == 1
+// Check that OTABSL_OPTION_NAMESPACE_NAME is neither "head" nor ""
+#if defined(__cplusplus)
 
 #define OTABSL_INTERNAL_INLINE_NAMESPACE_STR \
-  OTABSL_INTERNAL_TOKEN_STR(OTABSL_OPTION_INLINE_NAMESPACE_NAME)
+  OTABSL_INTERNAL_TOKEN_STR(OTABSL_OPTION_NAMESPACE_NAME)
 
 static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != '\0',
-              "options.h misconfigured: OTABSL_OPTION_INLINE_NAMESPACE_NAME must "
+              "options.h misconfigured: OTABSL_OPTION_NAMESPACE_NAME must "
               "not be empty.");
 static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
                   OTABSL_INTERNAL_INLINE_NAMESPACE_STR[1] != 'e' ||
                   OTABSL_INTERNAL_INLINE_NAMESPACE_STR[2] != 'a' ||
                   OTABSL_INTERNAL_INLINE_NAMESPACE_STR[3] != 'd' ||
                   OTABSL_INTERNAL_INLINE_NAMESPACE_STR[4] != '\0',
-              "options.h misconfigured: OTABSL_OPTION_INLINE_NAMESPACE_NAME must "
+              "options.h misconfigured: OTABSL_OPTION_NAMESPACE_NAME must "
               "be changed to a new, unique identifier name.");
 
 #endif
 
-#if OTABSL_OPTION_USE_INLINE_NAMESPACE == 0
-#define OTABSL_NAMESPACE_BEGIN
-#define OTABSL_NAMESPACE_END
-#elif OTABSL_OPTION_USE_INLINE_NAMESPACE == 1
-#define OTABSL_NAMESPACE_BEGIN \
-  inline namespace OTABSL_OPTION_INLINE_NAMESPACE_NAME {
+
+#define OTABSL_NAMESPACE_BEGIN namespace OTABSL_OPTION_NAMESPACE_NAME {
 #define OTABSL_NAMESPACE_END }
-#else
-#error options.h is misconfigured.
-#endif
 
 // -----------------------------------------------------------------------------
 // Compiler Feature Checks
@@ -172,6 +164,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 #ifdef OTABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE
 #error OTABSL_HAVE_STD_IS_TRIVIALLY_DESTRUCTIBLE cannot be directly set
 #elif defined(_LIBCPP_VERSION) ||                                        \
+    (defined(__clang__) && __clang_major__ >= 15) ||                     \
     (!defined(__clang__) && defined(__GNUC__) && defined(__GLIBCXX__) && \
      (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8))) ||        \
     defined(_MSC_VER)
@@ -194,6 +187,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 #elif defined(OTABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE)
 #error OTABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE cannot directly set
 #elif (defined(__clang__) && defined(_LIBCPP_VERSION)) ||        \
+    (defined(__clang__) && __clang_major__ >= 15) ||             \
     (!defined(__clang__) && defined(__GNUC__) &&                 \
      (__GNUC__ > 7 || (__GNUC__ == 7 && __GNUC_MINOR__ >= 4)) && \
      (defined(_LIBCPP_VERSION) || defined(__GLIBCXX__))) ||      \
@@ -202,9 +196,20 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 #define OTABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE 1
 #endif
 
+// OTABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE
+//
+// Checks whether `std::is_trivially_copyable<T>` is supported.
+//
+// Notes: Clang 15+ with libc++ supports these features, GCC hasn't been tested.
+#if defined(OTABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE)
+#error OTABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE cannot be directly set
+#elif defined(__clang__) && (__clang_major__ >= 15)
+#define OTABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE 1
+#endif
+
 // OTABSL_HAVE_SOURCE_LOCATION_CURRENT
 //
-// Indicates whether `absl::SourceLocation::current()` will return useful
+// Indicates whether `absl::OTABSL_OPTION_NAMESPACE_NAME::SourceLocation::current()` will return useful
 // information in some contexts.
 #ifndef OTABSL_HAVE_SOURCE_LOCATION_CURRENT
 #if OTABSL_INTERNAL_HAS_KEYWORD(__builtin_LINE) && \
@@ -557,7 +562,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 
 // OTABSL_USES_STD_ANY
 //
-// Indicates whether absl::any is an alias for std::any.
+// Indicates whether absl::OTABSL_OPTION_NAMESPACE_NAME::any is an alias for std::any.
 #if !defined(OTABSL_OPTION_USE_STD_ANY)
 #error options.h is misconfigured.
 #elif OTABSL_OPTION_USE_STD_ANY == 0 || \
@@ -572,7 +577,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 
 // OTABSL_USES_STD_OPTIONAL
 //
-// Indicates whether absl::optional is an alias for std::optional.
+// Indicates whether absl::OTABSL_OPTION_NAMESPACE_NAME::optional is an alias for std::optional.
 #if !defined(OTABSL_OPTION_USE_STD_OPTIONAL)
 #error options.h is misconfigured.
 #elif OTABSL_OPTION_USE_STD_OPTIONAL == 0 || \
@@ -587,7 +592,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 
 // OTABSL_USES_STD_VARIANT
 //
-// Indicates whether absl::variant is an alias for std::variant.
+// Indicates whether absl::OTABSL_OPTION_NAMESPACE_NAME::variant is an alias for std::variant.
 #if !defined(OTABSL_OPTION_USE_STD_VARIANT)
 #error options.h is misconfigured.
 #elif OTABSL_OPTION_USE_STD_VARIANT == 0 || \
@@ -602,7 +607,7 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 
 // OTABSL_USES_STD_STRING_VIEW
 //
-// Indicates whether absl::string_view is an alias for std::string_view.
+// Indicates whether absl::OTABSL_OPTION_NAMESPACE_NAME::string_view is an alias for std::string_view.
 #if !defined(OTABSL_OPTION_USE_STD_STRING_VIEW)
 #error options.h is misconfigured.
 #elif OTABSL_OPTION_USE_STD_STRING_VIEW == 0 || \
@@ -637,14 +642,9 @@ static_assert(OTABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 // the proper count to skip past the CCTZ fork namespace names.  (This number
 // is one larger when there is an inline namespace name to skip.)
 #if defined(_MSC_VER)
-#if OTABSL_OPTION_USE_INLINE_NAMESPACE == 0
-#define OTABSL_INTERNAL_MANGLED_NS "absl"
-#define OTABSL_INTERNAL_MANGLED_BACKREFERENCE "5"
-#else
 #define OTABSL_INTERNAL_MANGLED_NS \
-  OTABSL_INTERNAL_TOKEN_STR(OTABSL_OPTION_INLINE_NAMESPACE_NAME) "@absl"
+  OTABSL_INTERNAL_TOKEN_STR(OTABSL_OPTION_NAMESPACE_NAME) "@absl"
 #define OTABSL_INTERNAL_MANGLED_BACKREFERENCE "6"
-#endif
 #endif
 
 #undef OTABSL_INTERNAL_HAS_KEYWORD

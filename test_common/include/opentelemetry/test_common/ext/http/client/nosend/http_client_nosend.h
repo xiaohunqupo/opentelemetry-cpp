@@ -3,17 +3,18 @@
 
 #pragma once
 
-#ifdef ENABLE_TEST
-#  include "opentelemetry/ext/http/client/http_client.h"
-#  include "opentelemetry/ext/http/common/url_parser.h"
-#  include "opentelemetry/version.h"
+#include <gmock/gmock.h>
+#include <stdint.h>
+#include <chrono>
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <utility>
 
-#  include <map>
-#  include <string>
-#  include <vector>
-
-#  include <gtest/gtest.h>
-#  include "gmock/gmock.h"
+#include "opentelemetry/ext/http/client/http_client.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace ext
@@ -37,12 +38,10 @@ public:
     method_ = method;
   }
 
-#  ifdef ENABLE_HTTP_SSL_PREVIEW
   void SetSslOptions(const HttpSslOptions &ssl_options) noexcept override
   {
     ssl_options_ = ssl_options;
   }
-#  endif /* ENABLE_HTTP_SSL_PREVIEW */
 
   void SetBody(opentelemetry::ext::http::client::Body &body) noexcept override
   {
@@ -64,15 +63,31 @@ public:
     timeout_ms_ = timeout_ms;
   }
 
+  void SetCompression(
+      const opentelemetry::ext::http::client::Compression &compression) noexcept override
+  {
+    compression_ = compression;
+  }
+
+  void EnableLogging(bool is_log_enabled) noexcept override { is_log_enabled_ = is_log_enabled; }
+
+  void SetRetryPolicy(
+      const opentelemetry::ext::http::client::RetryPolicy &retry_policy) noexcept override
+  {
+    retry_policy_ = retry_policy;
+  }
+
 public:
   opentelemetry::ext::http::client::Method method_;
-#  ifdef ENABLE_HTTP_SSL_PREVIEW
   opentelemetry::ext::http::client::HttpSslOptions ssl_options_;
-#  endif /* ENABLE_HTTP_SSL_PREVIEW */
   opentelemetry::ext::http::client::Body body_;
   opentelemetry::ext::http::client::Headers headers_;
   std::string uri_;
   std::chrono::milliseconds timeout_ms_{5000};  // ms
+  opentelemetry::ext::http::client::Compression compression_{
+      opentelemetry::ext::http::client::Compression::kNone};
+  bool is_log_enabled_{false};
+  opentelemetry::ext::http::client::RetryPolicy retry_policy_;
 };
 
 class Response : public opentelemetry::ext::http::client::Response
@@ -113,7 +128,7 @@ public:
   opentelemetry::ext::http::client::StatusCode status_code_;
 };
 
-class HttpClient;
+class HttpClient;  // IWYU pragma: keep
 
 class Session : public opentelemetry::ext::http::client::Session
 {
@@ -186,4 +201,3 @@ public:
 }  // namespace http
 }  // namespace ext
 OPENTELEMETRY_END_NAMESPACE
-#endif

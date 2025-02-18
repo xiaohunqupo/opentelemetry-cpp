@@ -1,9 +1,14 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/common/env_variables.h"
-
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <string>
+
+#include "opentelemetry/sdk/common/env_variables.h"
 
 #if defined(_MSC_VER)
 using opentelemetry::sdk::common::setenv;
@@ -12,7 +17,9 @@ using opentelemetry::sdk::common::unsetenv;
 
 using opentelemetry::sdk::common::GetBoolEnvironmentVariable;
 using opentelemetry::sdk::common::GetDurationEnvironmentVariable;
+using opentelemetry::sdk::common::GetFloatEnvironmentVariable;
 using opentelemetry::sdk::common::GetStringEnvironmentVariable;
+using opentelemetry::sdk::common::GetUintEnvironmentVariable;
 
 #ifndef NO_GETENV
 TEST(EnvVarTest, BoolEnvVar)
@@ -207,4 +214,139 @@ TEST(EnvVarTest, DurationEnvVar)
   unsetenv("STRING_ENV_VAR_BROKEN_2");
 }
 
-#endif
+TEST(EnvVarTest, UintEnvVar)
+{
+  unsetenv("UINT_ENV_VAR_NONE");
+  setenv("UINT_ENV_VAR_EMPTY", "", 1);
+  setenv("UINT_ENV_VAR_POSITIVE_INT", "42", 1);
+  setenv("UINT_ENV_VAR_NEGATIVE_INT", "-42", 1);
+  setenv("UINT_ENV_VAR_POSITIVE_DEC", "12.34", 1);
+  setenv("UINT_ENV_VAR_NEGATIVE_DEC", "-12.34", 1);
+  setenv("UINT_ENV_VAR_POSITIVE_INT_MAX", "4294967295", 1);
+  setenv("UINT_ENV_VAR_POSITIVE_OVERFLOW", "4294967296", 1);
+  setenv("UINT_ENV_VAR_NEGATIVE_INT_MIN", "-2147483648", 1);
+  setenv("UINT_ENV_VAR_NEGATIVE_OVERFLOW", "-4294967296", 1);
+  setenv("UINT_ENV_VAR_TOO_LARGE_INT", "99999999999999999999", 1);
+  setenv("UINT_ENV_VAR_TOO_LARGE_DEC", "3.9999e+99", 1);
+  setenv("UINT_ENV_VAR_WITH_NOISE", "   \t \n 9.12345678.9", 1);
+  setenv("UINT_ENV_VAR_ONLY_SPACES", "   ", 1);
+
+  std::uint32_t value;
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_NONE", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_EMPTY", value));
+
+  ASSERT_TRUE(GetUintEnvironmentVariable("UINT_ENV_VAR_POSITIVE_INT", value));
+  ASSERT_EQ(42, value);
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_NEGATIVE_INT", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_POSITIVE_DEC", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_NEGATIVE_DEC", value));
+
+  ASSERT_TRUE(GetUintEnvironmentVariable("UINT_ENV_VAR_POSITIVE_INT_MAX", value));
+  ASSERT_EQ(4294967295, value);
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_POSITIVE_OVERFLOW", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_NEGATIVE_INT_MIN", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_NEGATIVE_OVERFLOW", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_TOO_LARGE_INT", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_TOO_LARGE_DEC", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_WITH_NOISE", value));
+
+  ASSERT_FALSE(GetUintEnvironmentVariable("UINT_ENV_VAR_ONLY_SPACES", value));
+
+  unsetenv("UINT_ENV_VAR_EMPTY");
+  unsetenv("UINT_ENV_VAR_POSITIVE_INT");
+  unsetenv("UINT_ENV_VAR_NEGATIVE_INT");
+  unsetenv("UINT_ENV_VAR_POSITIVE_DEC");
+  unsetenv("UINT_ENV_VAR_NEGATIVE_DEC");
+  unsetenv("UINT_ENV_VAR_POSITIVE_INT_MAX");
+  unsetenv("UINT_ENV_VAR_POSITIVE_OVERFLOW");
+  unsetenv("UINT_ENV_VAR_NEGATIVE_INT_MIN");
+  unsetenv("UINT_ENV_VAR_NEGATIVE_OVERFLOW");
+  unsetenv("UINT_ENV_VAR_TOO_LARGE_INT");
+  unsetenv("UINT_ENV_VAR_TOO_LARGE_DEC");
+  unsetenv("UINT_ENV_VAR_WITH_NOISE");
+  unsetenv("UINT_ENV_VAR_ONLY_SPACES");
+}
+
+TEST(EnvVarTest, FloatEnvVar)
+{
+  unsetenv("FLOAT_ENV_VAR_NONE");
+  setenv("FLOAT_ENV_VAR_EMPTY", "", 1);
+  setenv("FLOAT_ENV_VAR_POSITIVE_INT", "42", 1);
+  setenv("FLOAT_ENV_VAR_NEGATIVE_INT", "-42", 1);
+  setenv("FLOAT_ENV_VAR_POSITIVE_DEC", "12.34", 1);
+  setenv("FLOAT_ENV_VAR_NEGATIVE_DEC", "-12.34", 1);
+  setenv("FLOAT_ENV_VAR_POSITIVE_INT_MAX", "4294967295", 1);
+  setenv("FLOAT_ENV_VAR_POSITIVE_OVERFLOW", "4294967296", 1);
+  setenv("FLOAT_ENV_VAR_NEGATIVE_INT_MIN", "-2147483648", 1);
+  setenv("FLOAT_ENV_VAR_NEGATIVE_OVERFLOW", "-4294967296", 1);
+  setenv("FLOAT_ENV_VAR_TOO_LARGE_INT", "99999999999999999999", 1);
+  setenv("FLOAT_ENV_VAR_TOO_LARGE_DEC", "3.9999e+99", 1);
+  setenv("FLOAT_ENV_VAR_WITH_NOISE", "   \t \n 9.12345678.9", 1);
+  setenv("FLOAT_ENV_VAR_ONLY_SPACES", "   ", 1);
+
+  float value;
+
+  ASSERT_FALSE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_NONE", value));
+
+  ASSERT_FALSE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_EMPTY", value));
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_POSITIVE_INT", value));
+  ASSERT_FLOAT_EQ(42.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_NEGATIVE_INT", value));
+  ASSERT_FLOAT_EQ(-42.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_POSITIVE_DEC", value));
+  ASSERT_FLOAT_EQ(12.34f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_NEGATIVE_DEC", value));
+  ASSERT_FLOAT_EQ(-12.34f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_POSITIVE_INT_MAX", value));
+  ASSERT_FLOAT_EQ(4294967295.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_POSITIVE_OVERFLOW", value));
+  ASSERT_FLOAT_EQ(4294967296.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_NEGATIVE_INT_MIN", value));
+  ASSERT_FLOAT_EQ(-2147483648.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_NEGATIVE_OVERFLOW", value));
+  ASSERT_FLOAT_EQ(-4294967296.f, value);
+
+  ASSERT_TRUE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_TOO_LARGE_INT", value));
+  ASSERT_FLOAT_EQ(99999999999999999999.f, value);
+
+  ASSERT_FALSE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_TOO_LARGE_DEC", value));
+
+  ASSERT_FALSE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_WITH_NOISE", value));
+
+  ASSERT_FALSE(GetFloatEnvironmentVariable("FLOAT_ENV_VAR_ONLY_SPACES", value));
+
+  unsetenv("FLOAT_ENV_VAR_EMPTY");
+  unsetenv("FLOAT_ENV_VAR_POSITIVE_INT");
+  unsetenv("FLOAT_ENV_VAR_NEGATIVE_INT");
+  unsetenv("FLOAT_ENV_VAR_POSITIVE_DEC");
+  unsetenv("FLOAT_ENV_VAR_NEGATIVE_DEC");
+  unsetenv("FLOAT_ENV_VAR_POSITIVE_INT_MAX");
+  unsetenv("FLOAT_ENV_VAR_POSITIVE_OVERFLOW");
+  unsetenv("FLOAT_ENV_VAR_NEGATIVE_INT_MIN");
+  unsetenv("FLOAT_ENV_VAR_NEGATIVE_OVERFLOW");
+  unsetenv("FLOAT_ENV_VAR_TOO_LARGE_INT");
+  unsetenv("FLOAT_ENV_VAR_TOO_LARGE_DEC");
+  unsetenv("FLOAT_ENV_VAR_WITH_NOISE");
+  unsetenv("FLOAT_ENV_VAR_ONLY_SPACES");
+}
+
+#endif  // NO_GETENV

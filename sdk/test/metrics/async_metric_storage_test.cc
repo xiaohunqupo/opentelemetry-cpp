@@ -1,24 +1,36 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gtest/gtest.h>
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "common.h"
 
-#include "opentelemetry/common/key_value_iterable_view.h"
-#include "opentelemetry/sdk/metrics/async_instruments.h"
-#include "opentelemetry/sdk/metrics/exemplar/reservoir.h"
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/data/point_data.h"
+#include "opentelemetry/sdk/metrics/export/metric_producer.h"
 #include "opentelemetry/sdk/metrics/instruments.h"
-#include "opentelemetry/sdk/metrics/meter_context.h"
-#include "opentelemetry/sdk/metrics/metric_reader.h"
-#include "opentelemetry/sdk/metrics/observer_result.h"
-#include "opentelemetry/sdk/metrics/push_metric_exporter.h"
 #include "opentelemetry/sdk/metrics/state/async_metric_storage.h"
+#include "opentelemetry/sdk/metrics/state/attributes_hashmap.h"
+#include "opentelemetry/sdk/metrics/state/filtered_ordered_attribute_map.h"
 #include "opentelemetry/sdk/metrics/state/metric_collector.h"
-#include "opentelemetry/sdk/metrics/state/observable_registry.h"
+#include "opentelemetry/sdk/metrics/view/attributes_processor.h"
 
-#include <gtest/gtest.h>
-#include <cstdint>
-#include <memory>
-#include <vector>
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+#  include "opentelemetry/sdk/metrics/exemplar/filter_type.h"
+#  include "opentelemetry/sdk/metrics/exemplar/reservoir.h"
+#endif
 
 using namespace opentelemetry::sdk::metrics;
 using namespace opentelemetry::sdk::instrumentationscope;
@@ -55,7 +67,11 @@ TEST_P(WritableMetricStorageTestFixture, TestAggregation)
   collectors.push_back(collector);
 
   opentelemetry::sdk::metrics::AsyncMetricStorage storage(
-      instr_desc, AggregationType::kSum, ExemplarReservoir::GetNoExemplarReservoir(), nullptr);
+      instr_desc, AggregationType::kSum,
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+      ExemplarFilterType::kAlwaysOff, ExemplarReservoir::GetNoExemplarReservoir(),
+#endif
+      nullptr);
   int64_t get_count1                                                                  = 20;
   int64_t put_count1                                                                  = 10;
   std::unordered_map<MetricAttributes, int64_t, AttributeHashGenerator> measurements1 = {
@@ -146,7 +162,11 @@ TEST_P(WritableMetricStorageTestUpDownFixture, TestAggregation)
   collectors.push_back(collector);
 
   opentelemetry::sdk::metrics::AsyncMetricStorage storage(
-      instr_desc, AggregationType::kDefault, ExemplarReservoir::GetNoExemplarReservoir(), nullptr);
+      instr_desc, AggregationType::kDefault,
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+      ExemplarFilterType::kAlwaysOff, ExemplarReservoir::GetNoExemplarReservoir(),
+#endif
+      nullptr);
   int64_t get_count1                                                                  = 20;
   int64_t put_count1                                                                  = 10;
   std::unordered_map<MetricAttributes, int64_t, AttributeHashGenerator> measurements1 = {
@@ -236,7 +256,10 @@ TEST_P(WritableMetricStorageTestObservableGaugeFixture, TestAggregation)
   collectors.push_back(collector);
 
   opentelemetry::sdk::metrics::AsyncMetricStorage storage(
-      instr_desc, AggregationType::kLastValue, ExemplarReservoir::GetNoExemplarReservoir(),
+      instr_desc, AggregationType::kLastValue,
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+      ExemplarFilterType::kAlwaysOff, ExemplarReservoir::GetNoExemplarReservoir(),
+#endif
       nullptr);
   int64_t freq_cpu0                                                                   = 3;
   int64_t freq_cpu1                                                                   = 5;
@@ -246,7 +269,7 @@ TEST_P(WritableMetricStorageTestObservableGaugeFixture, TestAggregation)
                      opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now()));
 
   storage.Collect(
-      collector.get(), collectors, sdk_start_ts, collection_ts, [&](const MetricData metric_data) {
+      collector.get(), collectors, sdk_start_ts, collection_ts, [&](const MetricData &metric_data) {
         for (auto data_attr : metric_data.point_data_attr_)
         {
           auto data = opentelemetry::nostd::get<LastValuePointData>(data_attr.point_data);
@@ -272,7 +295,7 @@ TEST_P(WritableMetricStorageTestObservableGaugeFixture, TestAggregation)
   storage.RecordLong(measurements2,
                      opentelemetry::common::SystemTimestamp(std::chrono::system_clock::now()));
   storage.Collect(
-      collector.get(), collectors, sdk_start_ts, collection_ts, [&](const MetricData metric_data) {
+      collector.get(), collectors, sdk_start_ts, collection_ts, [&](const MetricData &metric_data) {
         for (auto data_attr : metric_data.point_data_attr_)
         {
           auto data = opentelemetry::nostd::get<LastValuePointData>(data_attr.point_data);

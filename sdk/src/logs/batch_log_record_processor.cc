@@ -1,12 +1,30 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/logs/batch_log_record_processor.h"
-#include "opentelemetry/common/spin_lock_mutex.h"
-#include "opentelemetry/common/timestamp.h"
-#include "opentelemetry/sdk/logs/recordable.h"
-
+#include <stddef.h>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <ratio>
+#include <thread>
+#include <utility>
 #include <vector>
+
+#include "opentelemetry/common/timestamp.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/sdk/common/atomic_unique_ptr.h"
+#include "opentelemetry/sdk/common/circular_buffer.h"
+#include "opentelemetry/sdk/common/circular_buffer_range.h"
+#include "opentelemetry/sdk/logs/batch_log_record_processor.h"
+#include "opentelemetry/sdk/logs/batch_log_record_processor_options.h"
+#include "opentelemetry/sdk/logs/batch_log_record_processor_runtime_options.h"
+#include "opentelemetry/sdk/logs/exporter.h"
+#include "opentelemetry/sdk/logs/recordable.h"
+#include "opentelemetry/version.h"
 
 using opentelemetry::sdk::common::AtomicUniquePtr;
 using opentelemetry::sdk::common::CircularBufferRange;
@@ -27,8 +45,12 @@ BatchLogRecordProcessor::BatchLogRecordProcessor(
       max_export_batch_size_(max_export_batch_size),
       buffer_(max_queue_size_),
       synchronization_data_(std::make_shared<SynchronizationData>()),
-      worker_thread_(&BatchLogRecordProcessor::DoBackgroundWork, this)
-{}
+      worker_thread_instrumentation_(nullptr),
+      worker_thread_()
+{
+  // Make sure the constructor is complete before giving 'this' to a thread.
+  worker_thread_ = std::thread(&BatchLogRecordProcessor::DoBackgroundWork, this);
+}
 
 BatchLogRecordProcessor::BatchLogRecordProcessor(std::unique_ptr<LogRecordExporter> &&exporter,
                                                  const BatchLogRecordProcessorOptions &options)
@@ -38,8 +60,29 @@ BatchLogRecordProcessor::BatchLogRecordProcessor(std::unique_ptr<LogRecordExport
       max_export_batch_size_(options.max_export_batch_size),
       buffer_(options.max_queue_size),
       synchronization_data_(std::make_shared<SynchronizationData>()),
-      worker_thread_(&BatchLogRecordProcessor::DoBackgroundWork, this)
-{}
+      worker_thread_instrumentation_(nullptr),
+      worker_thread_()
+{
+  // Make sure the constructor is complete before giving 'this' to a thread.
+  worker_thread_ = std::thread(&BatchLogRecordProcessor::DoBackgroundWork, this);
+}
+
+BatchLogRecordProcessor::BatchLogRecordProcessor(
+    std::unique_ptr<LogRecordExporter> &&exporter,
+    const BatchLogRecordProcessorOptions &options,
+    const BatchLogRecordProcessorRuntimeOptions &runtime_options)
+    : exporter_(std::move(exporter)),
+      max_queue_size_(options.max_queue_size),
+      scheduled_delay_millis_(options.schedule_delay_millis),
+      max_export_batch_size_(options.max_export_batch_size),
+      buffer_(options.max_queue_size),
+      synchronization_data_(std::make_shared<SynchronizationData>()),
+      worker_thread_instrumentation_(runtime_options.thread_instrumentation),
+      worker_thread_()
+{
+  // Make sure the constructor is complete before giving 'this' to a thread.
+  worker_thread_ = std::thread(&BatchLogRecordProcessor::DoBackgroundWork, this);
+}
 
 std::unique_ptr<Recordable> BatchLogRecordProcessor::MakeRecordable() noexcept
 {
@@ -65,7 +108,7 @@ void BatchLogRecordProcessor::OnEmit(std::unique_ptr<Recordable> &&record) noexc
   {
     // signal the worker thread
     synchronization_data_->is_force_wakeup_background_worker.store(true, std::memory_order_release);
-    synchronization_data_->cv.notify_one();
+    synchronization_data_->cv.notify_all();
   }
 }
 
@@ -79,21 +122,25 @@ bool BatchLogRecordProcessor::ForceFlush(std::chrono::microseconds timeout) noex
   // Now wait for the worker thread to signal back from the Export method
   std::unique_lock<std::mutex> lk_cv(synchronization_data_->force_flush_cv_m);
 
-  synchronization_data_->is_force_flush_pending.store(true, std::memory_order_release);
+  std::uint64_t current_sequence =
+      synchronization_data_->force_flush_pending_sequence.fetch_add(1, std::memory_order_release) +
+      1;
   synchronization_data_->force_flush_timeout_us.store(timeout.count(), std::memory_order_release);
-  auto break_condition = [this]() {
+  auto break_condition = [this, current_sequence]() {
     if (synchronization_data_->is_shutdown.load() == true)
     {
       return true;
     }
 
     // Wake up the worker thread once.
-    if (synchronization_data_->is_force_flush_pending.load(std::memory_order_acquire))
+    if (synchronization_data_->force_flush_pending_sequence.load(std::memory_order_acquire) >
+        synchronization_data_->force_flush_notified_sequence.load(std::memory_order_acquire))
     {
-      synchronization_data_->cv.notify_one();
+      synchronization_data_->cv.notify_all();
     }
 
-    return synchronization_data_->is_force_flush_notified.load(std::memory_order_acquire);
+    return synchronization_data_->force_flush_notified_sequence.load(std::memory_order_acquire) >=
+           current_sequence;
   };
 
   // Fix timeout to meet requirement of wait_for
@@ -104,49 +151,50 @@ bool BatchLogRecordProcessor::ForceFlush(std::chrono::microseconds timeout) noex
       std::chrono::duration_cast<std::chrono::steady_clock::duration>(timeout);
   if (timeout_steady <= std::chrono::steady_clock::duration::zero())
   {
-    timeout_steady = std::chrono::steady_clock::duration::max();
+    timeout_steady = (std::chrono::steady_clock::duration::max)();
   }
 
   bool result = false;
   while (!result && timeout_steady > std::chrono::steady_clock::duration::zero())
   {
-    // When is_force_flush_notified.store(true) and force_flush_cv.notify_all() is called
-    // between is_force_flush_pending.load() and force_flush_cv.wait(). We must not wait
-    // for ever
+    // When force_flush_notified_sequence.compare_exchange_strong(...) and
+    // force_flush_cv.notify_all() is called between force_flush_pending_sequence.load(...) and
+    // force_flush_cv.wait(). We must not wait for ever
     std::chrono::steady_clock::time_point start_timepoint = std::chrono::steady_clock::now();
-    result = synchronization_data_->force_flush_cv.wait_for(lk_cv, scheduled_delay_millis_,
-                                                            break_condition);
+    std::chrono::microseconds wait_timeout                = scheduled_delay_millis_;
+
+    if (wait_timeout > timeout_steady)
+    {
+      wait_timeout = std::chrono::duration_cast<std::chrono::microseconds>(timeout_steady);
+    }
+    result = synchronization_data_->force_flush_cv.wait_for(lk_cv, wait_timeout, break_condition);
     timeout_steady -= std::chrono::steady_clock::now() - start_timepoint;
   }
 
-  // If it's already signaled, we must wait util notified.
-  // We use a spin lock here
-  if (false ==
-      synchronization_data_->is_force_flush_pending.exchange(false, std::memory_order_acq_rel))
-  {
-    for (int retry_waiting_times = 0;
-         false == synchronization_data_->is_force_flush_notified.load(std::memory_order_acquire);
-         ++retry_waiting_times)
-    {
-      opentelemetry::common::SpinLockMutex::fast_yield();
-      if ((retry_waiting_times & 127) == 127)
-      {
-        std::this_thread::yield();
-      }
-    }
-  }
-
-  synchronization_data_->is_force_flush_notified.store(false, std::memory_order_release);
-
-  return result;
+  return synchronization_data_->force_flush_notified_sequence.load(std::memory_order_acquire) >=
+         current_sequence;
 }
 
 void BatchLogRecordProcessor::DoBackgroundWork()
 {
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+  if (worker_thread_instrumentation_ != nullptr)
+  {
+    worker_thread_instrumentation_->OnStart();
+  }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
+
   auto timeout = scheduled_delay_millis_;
 
   while (true)
   {
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+    if (worker_thread_instrumentation_ != nullptr)
+    {
+      worker_thread_instrumentation_->BeforeWait();
+    }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
+
     // Wait for `timeout` milliseconds
     std::unique_lock<std::mutex> lk(synchronization_data_->cv_m);
     synchronization_data_->cv.wait_for(lk, timeout, [this] {
@@ -160,10 +208,17 @@ void BatchLogRecordProcessor::DoBackgroundWork()
     synchronization_data_->is_force_wakeup_background_worker.store(false,
                                                                    std::memory_order_release);
 
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+    if (worker_thread_instrumentation_ != nullptr)
+    {
+      worker_thread_instrumentation_->AfterWait();
+    }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
+
     if (synchronization_data_->is_shutdown.load() == true)
     {
       DrainQueue();
-      return;
+      break;
     }
 
     auto start = std::chrono::steady_clock::now();
@@ -174,16 +229,30 @@ void BatchLogRecordProcessor::DoBackgroundWork()
     // Subtract the duration of this export call from the next `timeout`.
     timeout = scheduled_delay_millis_ - duration;
   }
+
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+  if (worker_thread_instrumentation_ != nullptr)
+  {
+    worker_thread_instrumentation_->OnEnd();
+  }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
 }
 
 void BatchLogRecordProcessor::Export()
 {
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+  if (worker_thread_instrumentation_ != nullptr)
+  {
+    worker_thread_instrumentation_->BeforeLoad();
+  }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
+
   do
   {
     std::vector<std::unique_ptr<Recordable>> records_arr;
     size_t num_records_to_export;
-    bool notify_force_flush =
-        synchronization_data_->is_force_flush_pending.exchange(false, std::memory_order_acq_rel);
+    std::uint64_t notify_force_flush =
+        synchronization_data_->force_flush_pending_sequence.load(std::memory_order_acquire);
     if (notify_force_flush)
     {
       num_records_to_export = buffer_.size();
@@ -200,6 +269,8 @@ void BatchLogRecordProcessor::Export()
       break;
     }
 
+    // Reserve space for the number of records
+    records_arr.reserve(num_records_to_export);
     buffer_.Consume(num_records_to_export,
                     [&](CircularBufferRange<AtomicUniquePtr<Recordable>> range) noexcept {
                       range.ForEach([&](AtomicUniquePtr<Recordable> &ptr) {
@@ -214,10 +285,17 @@ void BatchLogRecordProcessor::Export()
         nostd::span<std::unique_ptr<Recordable>>(records_arr.data(), records_arr.size()));
     NotifyCompletion(notify_force_flush, exporter_, synchronization_data_);
   } while (true);
+
+#ifdef ENABLE_THREAD_INSTRUMENTATION_PREVIEW
+  if (worker_thread_instrumentation_ != nullptr)
+  {
+    worker_thread_instrumentation_->AfterLoad();
+  }
+#endif /* ENABLE_THREAD_INSTRUMENTATION_PREVIEW */
 }
 
 void BatchLogRecordProcessor::NotifyCompletion(
-    bool notify_force_flush,
+    std::uint64_t notify_force_flush,
     const std::unique_ptr<LogRecordExporter> &exporter,
     const std::shared_ptr<SynchronizationData> &synchronization_data)
 {
@@ -226,7 +304,8 @@ void BatchLogRecordProcessor::NotifyCompletion(
     return;
   }
 
-  if (notify_force_flush)
+  if (notify_force_flush >
+      synchronization_data->force_flush_notified_sequence.load(std::memory_order_acquire))
   {
     if (exporter)
     {
@@ -236,8 +315,15 @@ void BatchLogRecordProcessor::NotifyCompletion(
           std::chrono::microseconds::zero());
       exporter->ForceFlush(timeout);
     }
-    synchronization_data->is_force_flush_notified.store(true, std::memory_order_release);
-    synchronization_data->force_flush_cv.notify_one();
+
+    std::uint64_t notified_sequence =
+        synchronization_data->force_flush_notified_sequence.load(std::memory_order_acquire);
+    while (notify_force_flush > notified_sequence)
+    {
+      synchronization_data->force_flush_notified_sequence.compare_exchange_strong(
+          notified_sequence, notify_force_flush, std::memory_order_acq_rel);
+      synchronization_data->force_flush_cv.notify_all();
+    }
   }
 }
 
@@ -246,7 +332,8 @@ void BatchLogRecordProcessor::DrainQueue()
   while (true)
   {
     if (buffer_.empty() &&
-        false == synchronization_data_->is_force_flush_pending.load(std::memory_order_acquire))
+        synchronization_data_->force_flush_pending_sequence.load(std::memory_order_acquire) <=
+            synchronization_data_->force_flush_notified_sequence.load(std::memory_order_acquire))
     {
       break;
     }
@@ -285,7 +372,7 @@ bool BatchLogRecordProcessor::Shutdown(std::chrono::microseconds timeout) noexce
   if (worker_thread_.joinable())
   {
     synchronization_data_->is_force_wakeup_background_worker.store(true, std::memory_order_release);
-    synchronization_data_->cv.notify_one();
+    synchronization_data_->cv.notify_all();
     worker_thread_.join();
   }
 

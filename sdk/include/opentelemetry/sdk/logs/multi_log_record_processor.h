@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "opentelemetry/sdk/logs/processor.h"
+#include "opentelemetry/sdk/logs/recordable.h"
 #include "opentelemetry/version.h"
 
 OPENTELEMETRY_BEGIN_NAMESPACE
@@ -15,8 +16,6 @@ namespace sdk
 {
 namespace logs
 {
-class Recordable;
-
 /**
  * Log processor allow hooks for receive method invocations.
  *
@@ -45,7 +44,7 @@ public:
    * @return a result code indicating whether it succeeded, failed or timed out
    */
   bool ForceFlush(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
   /**
    * Shuts down the processor and does any cleanup required.
@@ -55,7 +54,7 @@ public:
    * @return true if the shutdown succeeded, false otherwise
    */
   bool Shutdown(
-      std::chrono::microseconds timeout = std::chrono::microseconds::max()) noexcept override;
+      std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
 private:
   std::vector<std::unique_ptr<LogRecordProcessor>> processors_;

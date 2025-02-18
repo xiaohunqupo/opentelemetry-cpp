@@ -5,8 +5,10 @@
 
 #include <unordered_map>
 
+#include "opentelemetry/common/attribute_value.h"
 #include "opentelemetry/common/key_value_iterable.h"
 #include "opentelemetry/metrics/observer_result.h"
+#include "opentelemetry/nostd/string_view.h"
 #include "opentelemetry/sdk/metrics/state/attributes_hashmap.h"
 #include "opentelemetry/sdk/metrics/view/attributes_processor.h"
 #include "opentelemetry/version.h"
@@ -26,19 +28,15 @@ public:
 
   ~ObserverResultT() override = default;
 
-  void Observe(T value) noexcept override { data_.insert({{}, value}); }
+  void Observe(T value) noexcept override
+  {
+    data_[MetricAttributes{{}, attributes_processor_}] = value;
+  }
 
   void Observe(T value, const opentelemetry::common::KeyValueIterable &attributes) noexcept override
   {
-    if (attributes_processor_)
-    {
-      auto attr = attributes_processor_->process(attributes);
-      data_.insert({attr, value});
-    }
-    else
-    {
-      data_.insert({MetricAttributes{attributes}, value});
-    }
+    data_[MetricAttributes{attributes, attributes_processor_}] =
+        value;  // overwrites the previous value if present
   }
 
   const std::unordered_map<MetricAttributes, T, AttributeHashGenerator> &GetMeasurements()

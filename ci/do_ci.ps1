@@ -10,7 +10,9 @@ $nproc = (Get-ComputerInfo).CsNumberOfLogicalProcessors
 
 $SRC_DIR = (Get-Item -Path ".\").FullName
 
-$BAZEL_OPTIONS = "--copt=-DENABLE_ASYNC_EXPORT"
+# Workaround https://github.com/bazelbuild/bazel/issues/18683
+$BAZEL_STARTUP_OPTIONS = "--output_base=C:\O"
+$BAZEL_OPTIONS = "--copt=-DENABLE_ASYNC_EXPORT --compilation_mode=dbg"
 $BAZEL_TEST_OPTIONS = "$BAZEL_OPTIONS --test_output=errors"
 
 if (!(test-path build)) {
@@ -23,11 +25,13 @@ if (!(test-path plugin)) {
 }
 $PLUGIN_DIR = Join-Path "$SRC_DIR" "plugin"
 
-$VCPKG_DIR = Join-Path "$SRC_DIR" "tools" "vcpkg"
+$VCPKG_DIR = Join-Path "$SRC_DIR" "tools/vcpkg"
+
+$Env:CTEST_OUTPUT_ON_FAILURE = "1"
 
 switch ($action) {
   "bazel.build" {
-    bazel build --copt=-DENABLE_TEST $BAZEL_OPTIONS --action_env=VCPKG_DIR=$VCPKG_DIR --deleted_packages=opentracing-shim -- //...
+    bazel $BAZEL_STARTUP_OPTIONS build $BAZEL_OPTIONS --action_env=VCPKG_DIR=$VCPKG_DIR --deleted_packages=opentracing-shim -- //...
     $exit = $LASTEXITCODE
     if ($exit -ne 0) {
       exit $exit
@@ -90,9 +94,77 @@ switch ($action) {
       exit $exit
     }
   }
+  "cmake.dll.cxx20.test" {
+    cd "$BUILD_DIR"
+    cmake $SRC_DIR `
+      -DCMAKE_CXX_STANDARD=20 `
+      -DVCPKG_TARGET_TRIPLET=x64-windows `
+      -DOPENTELEMETRY_BUILD_DLL=1 `
+     "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_DIR/scripts/buildsystems/vcpkg.cmake"
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    cmake --build . -j $nproc
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    ctest -C Debug
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    $env:PATH = "$BUILD_DIR\ext\src\dll\Debug;$env:PATH"
+    examples\simple\Debug\example_simple.exe
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    examples\metrics_simple\Debug\metrics_ostream_example.exe
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    examples\logs_simple\Debug\example_logs_simple.exe
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+  }
   "cmake.maintainer.test" {
     cd "$BUILD_DIR"
     cmake $SRC_DIR `
+      -DWITH_OTLP_GRPC=ON `
+      -DWITH_OTLP_HTTP=ON `
+      -DWITH_OTLP_RETRY_PREVIEW=ON `
+      -DOTELCPP_MAINTAINER_MODE=ON `
+      -DWITH_NO_DEPRECATED_CODE=ON `
+      -DVCPKG_TARGET_TRIPLET=x64-windows `
+      "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_DIR/scripts/buildsystems/vcpkg.cmake"
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    cmake --build . -j $nproc
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+    ctest -C Debug
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+      exit $exit
+    }
+  }
+  "cmake.maintainer.cxx20.stl.test" {
+    cd "$BUILD_DIR"
+    cmake $SRC_DIR `
+      -DWITH_STL=CXX20 `
+      -DCMAKE_CXX_STANDARD=20 `
+      -DWITH_OTLP_GRPC=ON `
+      -DWITH_OTLP_HTTP=ON `
+      -DWITH_OTLP_RETRY_PREVIEW=ON `
       -DOTELCPP_MAINTAINER_MODE=ON `
       -DWITH_NO_DEPRECATED_CODE=ON `
       -DVCPKG_TARGET_TRIPLET=x64-windows `
@@ -137,6 +209,9 @@ switch ($action) {
     cd "$BUILD_DIR"
     cmake $SRC_DIR `
       -DVCPKG_TARGET_TRIPLET=x64-windows `
+      -DWITH_OTLP_GRPC=ON `
+      -DWITH_OTLP_HTTP=ON `
+      -DWITH_OTLP_RETRY_PREVIEW=ON `
       -DWITH_OTPROTCOL=ON `
       "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_DIR/scripts/buildsystems/vcpkg.cmake"
     $exit = $LASTEXITCODE

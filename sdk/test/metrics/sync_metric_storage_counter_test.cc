@@ -1,18 +1,34 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gtest/gtest.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <algorithm>
+#include <chrono>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 #include "common.h"
 
-#include <memory>
 #include "opentelemetry/common/key_value_iterable_view.h"
-#include "opentelemetry/nostd/shared_ptr.h"
-#include "opentelemetry/sdk/metrics/exemplar/histogram_exemplar_reservoir.h"
+#include "opentelemetry/context/context.h"
+#include "opentelemetry/nostd/function_ref.h"
+#include "opentelemetry/nostd/span.h"
+#include "opentelemetry/nostd/variant.h"
+#include "opentelemetry/sdk/metrics/data/metric_data.h"
+#include "opentelemetry/sdk/metrics/data/point_data.h"
 #include "opentelemetry/sdk/metrics/instruments.h"
+#include "opentelemetry/sdk/metrics/state/metric_collector.h"
 #include "opentelemetry/sdk/metrics/state/sync_metric_storage.h"
 #include "opentelemetry/sdk/metrics/view/attributes_processor.h"
 
-#include <gtest/gtest.h>
-#include <map>
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+#  include "opentelemetry/sdk/metrics/exemplar/filter_type.h"
+#  include "opentelemetry/sdk/metrics/exemplar/reservoir.h"
+#endif
 
 using namespace opentelemetry::sdk::metrics;
 using namespace opentelemetry::common;
@@ -29,7 +45,7 @@ TEST_P(WritableMetricStorageTestFixture, LongCounterSumAggregation)
   int64_t expected_total_get_requests = 0;
   int64_t expected_total_put_requests = 0;
   InstrumentDescriptor instr_desc     = {"name", "desc", "1unit", InstrumentType::kCounter,
-                                     InstrumentValueType::kLong};
+                                         InstrumentValueType::kLong};
   std::map<std::string, std::string> attributes_get = {{"RequestType", "GET"}};
   std::map<std::string, std::string> attributes_put = {{"RequestType", "PUT"}};
 
@@ -37,7 +53,10 @@ TEST_P(WritableMetricStorageTestFixture, LongCounterSumAggregation)
       new DefaultAttributesProcessor{}};
   opentelemetry::sdk::metrics::SyncMetricStorage storage(
       instr_desc, AggregationType::kSum, default_attributes_processor.get(),
-      ExemplarReservoir::GetNoExemplarReservoir(), nullptr);
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+      ExemplarFilterType::kAlwaysOff, ExemplarReservoir::GetNoExemplarReservoir(),
+#endif
+      nullptr);
 
   storage.RecordLong(10, KeyValueIterableView<std::map<std::string, std::string>>(attributes_get),
                      opentelemetry::context::Context{});
@@ -166,7 +185,7 @@ TEST_P(WritableMetricStorageTestFixture, DoubleCounterSumAggregation)
   double expected_total_get_requests = 0;
   double expected_total_put_requests = 0;
   InstrumentDescriptor instr_desc    = {"name", "desc", "1unit", InstrumentType::kCounter,
-                                     InstrumentValueType::kDouble};
+                                        InstrumentValueType::kDouble};
   std::map<std::string, std::string> attributes_get = {{"RequestType", "GET"}};
   std::map<std::string, std::string> attributes_put = {{"RequestType", "PUT"}};
 
@@ -174,7 +193,10 @@ TEST_P(WritableMetricStorageTestFixture, DoubleCounterSumAggregation)
       new DefaultAttributesProcessor{}};
   opentelemetry::sdk::metrics::SyncMetricStorage storage(
       instr_desc, AggregationType::kSum, default_attributes_processor.get(),
-      ExemplarReservoir::GetNoExemplarReservoir(), nullptr);
+#ifdef ENABLE_METRICS_EXEMPLAR_PREVIEW
+      ExemplarFilterType::kAlwaysOff, ExemplarReservoir::GetNoExemplarReservoir(),
+#endif
+      nullptr);
 
   storage.RecordDouble(10.0,
                        KeyValueIterableView<std::map<std::string, std::string>>(attributes_get),

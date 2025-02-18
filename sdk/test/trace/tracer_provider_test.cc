@@ -1,19 +1,33 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-#include "opentelemetry/sdk/trace/tracer_provider.h"
-#include "opentelemetry/sdk/resource/resource.h"
-#include "opentelemetry/sdk/trace/samplers/always_off.h"
-#include "opentelemetry/sdk/trace/samplers/always_on.h"
-#include "opentelemetry/sdk/trace/simple_processor.h"
-#include "opentelemetry/sdk/trace/tracer.h"
-
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "opentelemetry/common/macros.h"
+#include "opentelemetry/nostd/shared_ptr.h"
+#include "opentelemetry/nostd/string_view.h"
+#include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+#include "opentelemetry/sdk/resource/resource.h"
+#include "opentelemetry/sdk/trace/exporter.h"
+#include "opentelemetry/sdk/trace/id_generator.h"
+#include "opentelemetry/sdk/trace/processor.h"
+#include "opentelemetry/sdk/trace/random_id_generator.h"
+#include "opentelemetry/sdk/trace/sampler.h"
+#include "opentelemetry/sdk/trace/samplers/always_off.h"
+#include "opentelemetry/sdk/trace/simple_processor.h"
+#include "opentelemetry/sdk/trace/simple_processor_factory.h"
+#include "opentelemetry/sdk/trace/tracer.h"
+#include "opentelemetry/sdk/trace/tracer_context.h"
+#include "opentelemetry/sdk/trace/tracer_provider.h"
+#include "opentelemetry/sdk/trace/tracer_provider_factory.h"
+#include "opentelemetry/trace/tracer.h"
 
 using namespace opentelemetry::sdk::trace;
 using namespace opentelemetry::sdk::resource;
-
-#include <iostream>
 
 TEST(TracerProvider, GetTracer)
 {
@@ -78,7 +92,80 @@ TEST(TracerProvider, GetTracer)
   ASSERT_EQ(instrumentation_scope3.GetVersion(), "1.0.0");
 }
 
+TEST(TracerProvider, GetTracerEqualityCheck)
+{
+  auto processor = SimpleSpanProcessorFactory::Create(nullptr);
+  auto provider  = TracerProviderFactory::Create(std::move(processor));
+
+  // providing the same scope names should return the same tracer
+  auto tracer_1a = provider->GetTracer("library_name");
+  auto tracer_1b = provider->GetTracer("library_name");
+  EXPECT_EQ(tracer_1a, tracer_1b);
+
+  // providing the same scope name and version should return the same tracer
+  auto tracer_version1a = provider->GetTracer("library_name", "v1.0");
+  auto tracer_version1b = provider->GetTracer("library_name", "v1.0");
+  EXPECT_EQ(tracer_version1a, tracer_version1b);
+
+  // providing the same name, version, and schema urls should return the same tracer
+  auto tracer_urla = provider->GetTracer("library_name", "v1.0", "url");
+  auto tracer_urlb = provider->GetTracer("library_name", "v1.0", "url");
+  EXPECT_EQ(tracer_urla, tracer_urlb);
+}
+
+TEST(TracerProvider, GetTracerInequalityCheck)
+{
+  auto processor = SimpleSpanProcessorFactory::Create(nullptr);
+  auto provider  = TracerProviderFactory::Create(std::move(processor));
+
+  auto tracer_library_1 = provider->GetTracer("library_1");
+  auto tracer_library_2 = provider->GetTracer("library_2");
+  auto tracer_version_1 = provider->GetTracer("library_1", "v1.0");
+  auto tracer_version_2 = provider->GetTracer("library_1", "v2.0");
+  auto tracer_url_1     = provider->GetTracer("library_1", "v1.0", "url_1");
+  auto tracer_url_2     = provider->GetTracer("library_1", "v1.0", "url_2");
+
+  // different scope names should return distinct tracers
+  EXPECT_NE(tracer_library_1, tracer_library_2);
+
+  // different scope versions should return distinct tracers
+  EXPECT_NE(tracer_version_1, tracer_library_1);
+  EXPECT_NE(tracer_version_1, tracer_version_2);
+
+  // different scope schema urls should return distinct tracers
+  EXPECT_NE(tracer_url_1, tracer_library_1);
+  EXPECT_NE(tracer_url_1, tracer_version_1);
+  EXPECT_NE(tracer_url_1, tracer_url_2);
+}
+
 #if OPENTELEMETRY_ABI_VERSION_NO >= 2
+
+TEST(TracerProvider, GetTracerEqualityCheckAbiv2)
+{
+  auto processor = SimpleSpanProcessorFactory::Create(nullptr);
+  auto provider  = TracerProviderFactory::Create(std::move(processor));
+
+  auto tracer_attribute1a = provider->GetTracer("library_name", "v1.0", "url", {{"key", "one"}});
+  auto tracer_attribute1b = provider->GetTracer("library_name", "v1.0", "url", {{"key", "one"}});
+
+  // providing the same name, version, schema url and attributes should return the same tracer
+  EXPECT_EQ(tracer_attribute1a, tracer_attribute1b);
+}
+
+TEST(TracerProvider, GetTracerInequalityCheckAbiv2)
+{
+  auto processor = SimpleSpanProcessorFactory::Create(nullptr);
+  auto provider  = TracerProviderFactory::Create(std::move(processor));
+
+  auto tracer_1          = provider->GetTracer("library_name", "v1.0", "url");
+  auto tracer_attribute1 = provider->GetTracer("library_name", "v1.0", "url", {{"key", "one"}});
+  auto tracer_attribute2 = provider->GetTracer("library_name", "v1.0", "url", {{"key", "two"}});
+
+  // different scope attributes should return distinct tracers
+  EXPECT_NE(tracer_attribute1, tracer_1);
+  EXPECT_NE(tracer_attribute1, tracer_attribute2);
+}
+
 TEST(TracerProvider, GetTracerAbiv2)
 {
   std::unique_ptr<SpanProcessor> processor(new SimpleSpanProcessor(nullptr));
@@ -172,11 +259,11 @@ TEST(TracerProvider, GetTracerAbiv2)
                          {{"a", "string"},
                           {"b", false},
                           {"c", 314159},
-                          {"d", (unsigned int)314159},
-                          {"e", (int32_t)-20},
-                          {"f", (uint32_t)20},
-                          {"g", (int64_t)-20},
-                          {"h", (uint64_t)20},
+                          {"d", static_cast<unsigned int>(314159)},
+                          {"e", static_cast<int32_t>(-20)},
+                          {"f", static_cast<uint32_t>(20)},
+                          {"g", static_cast<int64_t>(-20)},
+                          {"h", static_cast<uint64_t>(20)},
                           {"i", 3.1},
                           {"j", "string"}});
   ASSERT_NE(nullptr, t8);
@@ -192,9 +279,16 @@ TEST(TracerProvider, GetTracerAbiv2)
   }
 
   std::map<std::string, opentelemetry::common::AttributeValue> attr9{
-      {"a", "string"},     {"b", false},        {"c", 314159},       {"d", (unsigned int)314159},
-      {"e", (int32_t)-20}, {"f", (uint32_t)20}, {"g", (int64_t)-20}, {"h", (uint64_t)20},
-      {"i", 3.1},          {"j", "string"}};
+      {"a", "string"},
+      {"b", false},
+      {"c", 314159},
+      {"d", static_cast<unsigned int>(314159)},
+      {"e", static_cast<int32_t>(-20)},
+      {"f", static_cast<uint32_t>(20)},
+      {"g", static_cast<int64_t>(-20)},
+      {"h", static_cast<uint64_t>(20)},
+      {"i", 3.1},
+      {"j", "string"}};
 
   auto t9 = tp.GetTracer("name9", "version9", "url9", attr9);
   ASSERT_NE(nullptr, t9);
